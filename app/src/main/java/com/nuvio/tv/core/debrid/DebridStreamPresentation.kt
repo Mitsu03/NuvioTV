@@ -44,7 +44,13 @@ class DebridStreamPresentation @Inject constructor(
         streamBadgeRules: StreamBadgeRules = StreamBadgeRules(),
         includeBadgeMatches: Boolean = true
     ): List<AddonStreams> {
-        if (!settings.canResolvePlayableLinks) return groups
+        // Decoder capability belongs to the device, not to the debrid account, so addon streams
+        // get the same demotion whether or not there is a resolver to rank against.
+        if (!settings.canResolvePlayableLinks) {
+            return groups.map { group ->
+                group.copy(streams = DirectDebridStreamFilter.demoteUndecodableStreams(group.streams))
+            }
+        }
         val badgeFilters by lazy {
             if (includeBadgeMatches) getBadgeFilters(streamBadgeRules) else emptyList()
         }
@@ -53,11 +59,17 @@ class DebridStreamPresentation @Inject constructor(
                 .filterNot { stream -> stream.isInactiveResolverStream(settings) }
                 .filterNot { stream -> stream.isUncachedDebridStream() }
             val debridStreams = visibleStreams.filter { stream -> stream.isManagedDebridStream() }
-            if (debridStreams.isEmpty()) return@map group.copy(streams = visibleStreams)
+            if (debridStreams.isEmpty()) {
+                return@map group.copy(
+                    streams = DirectDebridStreamFilter.demoteUndecodableStreams(visibleStreams)
+                )
+            }
 
             val presentedDebridStreams = DirectDebridStreamFilter.applyPreferences(debridStreams, settings)
                 .map { stream -> formatter.format(stream, settings, badgeFilters) }
-            val passthroughStreams = visibleStreams.filterNot { stream -> stream.isManagedDebridStream() }
+            val passthroughStreams = DirectDebridStreamFilter.demoteUndecodableStreams(
+                visibleStreams.filterNot { stream -> stream.isManagedDebridStream() }
+            )
 
             group.copy(streams = presentedDebridStreams + passthroughStreams)
         }

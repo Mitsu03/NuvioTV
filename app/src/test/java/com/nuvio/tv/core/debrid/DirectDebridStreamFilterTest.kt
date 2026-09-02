@@ -502,6 +502,33 @@ class DirectDebridStreamFilterTest {
             .map { it.toDomain(DirectDebridStreamFilter.FALLBACK_SOURCE_NAME, null) }
     }
 
+    @Test
+    fun `undecodable streams are demoted behind playable ones without reordering either side`() {
+        // The device fakes an AV1 gap: everything else decodes.
+        val playable = { encode: DebridStreamEncode, _: String -> encode != DebridStreamEncode.AV1 }
+        val av1 = stream(name = "One Piece E68 1080p WEB-DL AV1", resolve = null)
+        val avcFirst = stream(name = "One Piece E68 1080p WEB-DL x264", resolve = null)
+        val avcSecond = stream(name = "One Piece E68 720p WEB-DL AVC", resolve = null)
+
+        val ordered = DirectDebridStreamFilter.demoteUndecodableStreams(
+            listOf(av1, avcFirst, avcSecond),
+            playable
+        )
+
+        assertEquals(listOf(avcFirst, avcSecond, av1), ordered)
+    }
+
+    @Test
+    fun `an all undecodable list keeps its order so the title stays offered`() {
+        val playable = { _: DebridStreamEncode, _: String -> false }
+        val first = stream(name = "Only source 1080p AV1", resolve = null)
+        val second = stream(name = "Only source 720p AV1", resolve = null)
+
+        val ordered = DirectDebridStreamFilter.demoteUndecodableStreams(listOf(first, second), playable)
+
+        assertEquals(listOf(first, second), ordered)
+    }
+
     private fun stream(
         name: String? = "Stream",
         resolve: StreamClientResolve?

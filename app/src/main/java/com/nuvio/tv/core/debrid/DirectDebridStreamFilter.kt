@@ -75,6 +75,28 @@ object DirectDebridStreamFilter {
     fun facts(stream: Stream, settings: DebridSettings): StreamFacts =
         streamFacts(stream, effectivePreferences(settings))
 
+    /**
+     * Orders [streams] so anything this device has no decoder for sits behind the rest, keeping
+     * the relative order on either side of the split.
+     *
+     * [applyPreferences] already demotes those while ranking, but it only ever sees managed debrid
+     * streams. Everything an addon serves passes through in the order the addon sent it, so an AV1
+     * release still lands first on hardware that cannot open it and playback dies on
+     * ERROR_CODE_DECODER_INIT_FAILED before the first frame. This is an ordering rather than a
+     * filter for the same reason as there: a title whose only source is undecodable stays offered.
+     */
+    fun demoteUndecodableStreams(
+        streams: List<Stream>,
+        isPlayable: (DebridStreamEncode, String) -> Boolean = ::isPlayableOnDevice
+    ): List<Stream> {
+        if (streams.size < 2) return streams
+        val (playable, unplayable) = streams.partition { stream ->
+            val searchText = streamSearchText(stream)
+            isPlayable(streamEncode(null, searchText), searchText)
+        }
+        return if (unplayable.isEmpty()) streams else playable + unplayable
+    }
+
     private fun effectivePreferences(settings: DebridSettings): DebridStreamPreferences {
         val default = DebridStreamPreferences()
         if (settings.streamPreferences != default) return settings.streamPreferences
@@ -227,7 +249,7 @@ object DirectDebridStreamFilter {
             visualRank = rankAny(visualTags, preferences.preferredVisualTags),
             audioRank = rankAny(audioTags, preferences.preferredAudioTags),
             channelRank = rankAny(audioChannels, preferences.preferredAudioChannels),
-            encodeRank = rank(encode, preferences.preferredEncodes),
+            encodeRank = encodeRank(encode, searchText, preferences.preferredEncodes),
             languageRank = if (languages.isEmpty()) Int.MAX_VALUE else languages.minOf { rank(it, preferences.preferredLanguages) }
         )
     }
@@ -345,6 +367,41 @@ object DirectDebridStreamFilter {
             ?.groupValues
             ?.getOrNull(1)
             .orEmpty()
+    }
+
+    /**
+     * Ranks an encode by preference, but behind every encode this device can decode.
+     *
+     * Preference order is taste; a missing decoder is a hard limit. Without this, AV1 - first in
+     * the default order - wins on hardware that cannot open it and playback fails before the first
+     * frame. Unplayable encodes stay selectable, just last, so a title with no other source is
+     * still offered.
+     */
+    private fun encodeRank(
+        encode: DebridStreamEncode,
+        searchText: String,
+        preferred: List<DebridStreamEncode>
+    ): Int {
+        val preferenceRank = rank(encode, preferred)
+        if (isPlayableOnDevice(encode, searchText)) {
+            return preferenceRank
+        }
+        return if (preferenceRank == Int.MAX_VALUE) Int.MAX_VALUE else Int.MAX_VALUE - 1
+    }
+
+    /** Whether this device can open [encode], given what [searchText] says about the release. */
+    internal fun isPlayableOnDevice(encode: DebridStreamEncode, searchText: String): Boolean =
+        DeviceEncodeSupport.isDecodable(encode) &&
+            (!searchText.hasTenBitToken() || DeviceEncodeSupport.isTenBitDecodable(encode))
+
+    /**
+     * Ten-bit markers as release names write them: Hi10P, 10bit, 10-bit, 10 bits.
+     *
+     * The codec string would say this outright, but it is only known once the stream is opened -
+     * far too late to pick a different one. The release name is what is available at ranking time.
+     */
+    private fun String.hasTenBitToken(): Boolean {
+        return Regex("(^|[^a-z0-9])(hi10p?|10[ ._-]?bits?)([^a-z0-9]|$)").containsMatchIn(lowercase())
     }
 
     private fun <T> rank(value: T, preferred: List<T>): Int {
