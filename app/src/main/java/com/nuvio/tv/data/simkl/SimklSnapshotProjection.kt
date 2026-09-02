@@ -18,6 +18,7 @@ internal class SimklSnapshotProjection private constructor(
     private val watchedKeys: Set<SimklProjectionItemKey>,
     private val playbackByEpisode: Map<SimklProjectionItemKey, WatchProgress>,
     private val hiddenContentIds: Set<String>,
+    private val watchingContentIds: Set<String>,
     private val watchedAnimeEpisodes: Map<String, Set<Int>>,
     private val membershipByContent: Map<SimklProjectionMembershipKey, SimklProjectionMembership>
 ) {
@@ -63,6 +64,19 @@ internal class SimklSnapshotProjection private constructor(
 
     fun isHidden(contentId: String): Boolean = contentId.simklLookupKey() in hiddenContentIds
 
+    /**
+     * True when any Simkl entry behind [contentId] is still on the Watching list.
+     *
+     * Simkl splits a franchise into one entry per season, cour or arc, while a meta addon
+     * serves the whole run under a single ID. Finishing one entry therefore leaves plenty of
+     * episodes ahead in the addon's list, and Next Up - which only asks whether an episode
+     * follows the furthest one watched - keeps offering them. Matching on every alias means a
+     * franchise counts as watching while any of its entries is, which is what the viewer sees
+     * on Simkl.
+     */
+    fun isTrackedAsWatching(contentId: String): Boolean =
+        contentId.simklLookupKey() in watchingContentIds
+
     fun isWatchedByVideoId(videoId: String, episode: Int): Boolean {
         val parsed = parseSimklProjectionVideoId(videoId) ?: return false
         return (parsed.episode ?: episode) in watchedAnimeEpisodes[parsed.lookupKey].orEmpty()
@@ -83,6 +97,7 @@ internal class SimklSnapshotProjection private constructor(
             val canonicalIdByAlias = linkedMapOf<String, String>()
             val siblings = linkedMapOf<String, MutableSet<String>>()
             val hiddenContentIds = linkedSetOf<String>()
+            val watchingContentIds = linkedSetOf<String>()
             val membershipByContent = linkedMapOf<SimklProjectionMembershipKey, SimklProjectionMembership>()
             val watchedAnimeEpisodes = linkedMapOf<String, Set<Int>>()
 
@@ -96,6 +111,9 @@ internal class SimklSnapshotProjection private constructor(
                 }
                 if (entry.status.hidesContinueWatching()) {
                     ids.mapTo(hiddenContentIds, String::simklLookupKey)
+                }
+                if (entry.status == SimklListStatus.WATCHING) {
+                    ids.mapTo(watchingContentIds, String::simklLookupKey)
                 }
                 val listKey = entry.status?.let { status ->
                     simklLibraryStatusDefinitions.firstOrNull { definition -> definition.status == status }?.key
@@ -161,6 +179,7 @@ internal class SimklSnapshotProjection private constructor(
                 watchedKeys = watchedKeys,
                 playbackByEpisode = playbackByEpisode,
                 hiddenContentIds = hiddenContentIds,
+                watchingContentIds = watchingContentIds,
                 watchedAnimeEpisodes = watchedAnimeEpisodes,
                 membershipByContent = membershipByContent
             )

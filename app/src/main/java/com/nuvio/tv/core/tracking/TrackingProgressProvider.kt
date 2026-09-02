@@ -38,6 +38,16 @@ interface TrackingProgressProvider {
     fun retainsLocalProgress(contentId: String): Boolean = false
     fun retainsLocalWatchedEpisode(item: WatchedItem): Boolean = false
     fun isHiddenFromProgress(contentId: String): Boolean
+
+    /**
+     * True when the provider's list still has this content marked as being watched.
+     *
+     * Next Up is seeded from watch history, which says nothing about whether the viewer
+     * considers a show current. Providers that model a watchlist can answer this so a finished
+     * show does not keep offering episodes. Providers without the concept answer true and
+     * behave as before.
+     */
+    fun isTrackedAsWatching(contentId: String): Boolean = true
     fun continueWatchingCutoffEpochMs(daysCap: Int, nowEpochMs: Long): Long? = null
     fun shouldUseAsNextUpSeed(progress: WatchProgress, nowEpochMs: Long): Boolean =
         progress.isCompleted()

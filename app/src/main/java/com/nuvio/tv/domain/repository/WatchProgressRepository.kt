@@ -141,6 +141,12 @@ interface WatchProgressRepository {
      */
     fun isDroppedShow(contentId: String): Boolean
 
+    /**
+     * Returns true when the active source still lists this content as being watched.
+     * Sources without a watchlist concept answer true.
+     */
+    fun isTrackedAsWatching(contentId: String): Boolean
+
     fun hasActiveTrackingProgressProvider(): Boolean
     fun activeProviderOwnsCompletedHistoryProjection(): Boolean
     fun activeProviderContinueWatchingCutoffEpochMs(daysCap: Int, nowEpochMs: Long): Long?
