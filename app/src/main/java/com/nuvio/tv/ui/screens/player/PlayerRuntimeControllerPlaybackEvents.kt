@@ -934,7 +934,13 @@ internal fun PlayerRuntimeController.emitStopScrobbleForCurrentProgress() {
 }
 
 internal fun PlayerRuntimeController.emitPauseScrobbleForCurrentProgress() {
-    emitScrobblePause(progressPercent = currentPlaybackProgressPercent())
+    val progressPercent = currentPlaybackProgressPercent()
+    if (shouldEscalatePauseToCompletionStop(progressPercent)) {
+        logScrobbleDiagnostic("pause_escalated_to_completion", "progress=$progressPercent")
+        emitCompletionScrobbleStop(progressPercent = progressPercent)
+        return
+    }
+    emitScrobblePause(progressPercent = progressPercent)
 }
 
 internal fun PlayerRuntimeController.emitSeekScrobbleRestart(progressPercent: Float) {
