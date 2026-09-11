@@ -20,8 +20,13 @@ internal class SimklSnapshotProjection private constructor(
     private val hiddenContentIds: Set<String>,
     private val watchingContentIds: Set<String>,
     private val watchedAnimeEpisodes: Map<String, Set<Int>>,
-    private val membershipByContent: Map<SimklProjectionMembershipKey, SimklProjectionMembership>
+    private val membershipByContent: Map<SimklProjectionMembershipKey, SimklProjectionMembership>,
+    private val snapshot: SimklSyncSnapshot
 ) {
+    /** Ids of sibling entries that describe the same show, for when [contentId] resolves to nothing. */
+    fun alternateContentIds(contentId: String): List<String> =
+        snapshot.alternateContentIdsFor(contentId)
+
     fun nextUp(preferFurthestEpisode: Boolean): List<WatchProgress> =
         if (preferFurthestEpisode) furthestNextUp else recentNextUp
 
@@ -181,7 +186,8 @@ internal class SimklSnapshotProjection private constructor(
                 hiddenContentIds = hiddenContentIds,
                 watchingContentIds = watchingContentIds,
                 watchedAnimeEpisodes = watchedAnimeEpisodes,
-                membershipByContent = membershipByContent
+                membershipByContent = membershipByContent,
+                snapshot = snapshot
             )
         }
     }

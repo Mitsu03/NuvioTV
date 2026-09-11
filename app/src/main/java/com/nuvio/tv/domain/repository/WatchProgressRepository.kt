@@ -148,6 +148,9 @@ interface WatchProgressRepository {
     fun isTrackedAsWatching(contentId: String): Boolean
 
     fun hasActiveTrackingProgressProvider(): Boolean
+    /** Ids the active tracker also knows this content under, best first; empty when it knows none. */
+    fun activeProviderAlternateContentIds(contentId: String): List<String> = emptyList()
+
     fun activeProviderOwnsCompletedHistoryProjection(): Boolean
     fun activeProviderContinueWatchingCutoffEpochMs(daysCap: Int, nowEpochMs: Long): Long?
     fun shouldUseAsNextUpSeed(progress: WatchProgress, nowEpochMs: Long): Boolean
