@@ -80,3 +80,24 @@ internal fun shouldSurfaceNextUpForUntrackedSeries(
     }
     return distanceFromNowMs <= NEXT_UP_NEW_RELEASE_WINDOW_MS
 }
+
+/**
+ * Whether Continue Watching may offer a next episode for a series.
+ *
+ * A tracker's list is the viewer's own statement about what they are still watching, so a series
+ * it no longer lists as watching stays out - unless the next episode is news, which
+ * [shouldSurfaceNextUpForUntrackedSeries] decides.
+ *
+ * Providers with no concept of a watchlist pass `true` for [isTrackedAsWatching] and keep the
+ * behaviour they had before.
+ */
+internal fun shouldSurfaceNextUpForSeries(
+    isTrackedAsWatching: Boolean,
+    seedLastWatchedEpochMs: Long,
+    releasedEpochMs: Long?,
+    nowEpochMs: Long
+): Boolean = isTrackedAsWatching || shouldSurfaceNextUpForUntrackedSeries(
+    seedLastWatchedEpochMs = seedLastWatchedEpochMs,
+    releasedEpochMs = releasedEpochMs,
+    nowEpochMs = nowEpochMs
+)
