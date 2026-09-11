@@ -4,6 +4,7 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.nuvio.tv.core.network.NetworkResult
+import com.nuvio.tv.core.tracking.shouldSurfaceNextUpForSeries
 import com.nuvio.tv.core.util.isEpisodeReleaseAired
 import com.nuvio.tv.core.util.parseEpisodeReleaseInstant
 import com.nuvio.tv.core.util.selectEpisodeReleaseValue
@@ -509,6 +510,21 @@ internal fun HomeViewModel.loadContinueWatchingPipeline() {
                         val seedAdvanced = curSeason > cached.seedSeason ||
                             (curSeason == cached.seedSeason && curEpisode > cached.seedEpisode)
                         if (seedAdvanced) return@mapNotNull null
+                    }
+                    // Drop cards the tracker no longer lists as watching, so a series finished
+                    // before this build shipped disappears on the first render rather than
+                    // lingering until the pipeline rewrites the snapshot. Only once the remote
+                    // list has loaded: an empty projection would answer "not watching" for
+                    // everything.
+                    if (
+                        snapshot.hasLoadedRemoteProgress &&
+                        !shouldSurfaceNextUpCard(
+                            contentId = cached.contentId,
+                            seedLastWatchedEpochMs = cached.lastWatched,
+                            releaseTimestamp = cached.releaseTimestamp
+                        )
+                    ) {
+                        return@mapNotNull null
                     }
                     ContinueWatchingItem.NextUp(
                         info = NextUpInfo(
@@ -1216,6 +1232,27 @@ private fun HomeViewModel.shouldUseAsCompletedSeed(progress: WatchProgress): Boo
     return watchProgressRepository.shouldUseAsNextUpSeed(progress, System.currentTimeMillis())
 }
 
+/**
+ * Whether a Next Up card may be shown for [contentId].
+ *
+ * Next Up is seeded from watch history alone, so a series the tracker no longer lists as watching
+ * keeps offering whatever the addon lists after the furthest episode watched. Asking the active
+ * provider for the list status is what keeps Continue Watching to what the viewer is actually
+ * watching; [shouldSurfaceNextUpForSeries] carves out a next episode that has only just aired.
+ *
+ * Providers without a watchlist answer true and behave as before.
+ */
+private fun HomeViewModel.shouldSurfaceNextUpCard(
+    contentId: String,
+    seedLastWatchedEpochMs: Long,
+    releaseTimestamp: Long?
+): Boolean = shouldSurfaceNextUpForSeries(
+    isTrackedAsWatching = watchProgressRepository.isTrackedAsWatching(contentId),
+    seedLastWatchedEpochMs = seedLastWatchedEpochMs,
+    releasedEpochMs = releaseTimestamp,
+    nowEpochMs = System.currentTimeMillis()
+)
+
 private fun HomeViewModel.shouldTreatAsActiveInProgressForNextUpSuppression(
     progress: WatchProgress,
     latestCompletedAt: Long?
@@ -1426,7 +1463,14 @@ private suspend fun HomeViewModel.buildLightweightNextUpItems(
             .filter { progress ->
                 nextUpDismissKey(progress.contentId, progress.season, progress.episode) !in dismissedNextUp
             }
-            .sortedByDescending { it.lastWatched }
+            // Seeds the tracker still lists as watching go first. Only they are certain to
+            // survive the card gate, so letting a completed series take one of the
+            // CW_MAX_NEXT_UP_LOOKUPS slots would spend a lookup on a card that is then dropped.
+            .sortedWith(
+                compareByDescending<WatchProgress> {
+                    watchProgressRepository.isTrackedAsWatching(it.contentId)
+                }.thenByDescending { it.lastWatched }
+            )
             // Skip seeds validated as "no next-up" ONLY if the seed hasn't changed.
             // The cache key includes season+episode, so a changed seed (user watched
             // a new episode) produces a cache miss and is always processed.
@@ -1863,6 +1907,19 @@ private suspend fun HomeViewModel.buildNextUpItem(
         nextReleased = nextUp.released,
         hasAired = nextUp.hasAired
     )
+    if (
+        !shouldSurfaceNextUpCard(
+            contentId = progress.contentId,
+            seedLastWatchedEpochMs = progress.lastWatched,
+            releaseTimestamp = releaseState.releaseTimestamp
+        )
+    ) {
+        logNextUpDecision(
+            "drop contentId=${progress.contentId} name=${progress.name} reason=not-tracked-as-watching " +
+                "next=${nextUp.season}x${nextUp.episode} released=${nextUp.released}"
+        )
+        return null
+    }
     val nextUpVideo = seedMeta?.videos?.firstOrNull {
         it.season == nextUp.season && it.episode == nextUp.episode
     }
