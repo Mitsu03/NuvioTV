@@ -1027,6 +1027,12 @@ class WatchProgressRepositoryImpl @Inject constructor(
     override fun hasActiveTrackingProgressProvider(): Boolean =
         activeProgressProviderId != null
 
+    override fun activeProviderAlternateContentIds(contentId: String): List<String> =
+        activeProgressProviderId
+            ?.let(trackingProgressProviders::provider)
+            ?.alternateContentIds(contentId)
+            .orEmpty()
+
     override fun activeProviderOwnsCompletedHistoryProjection(): Boolean =
         activeProgressProviderId
             ?.let(trackingProgressProviders::provider)

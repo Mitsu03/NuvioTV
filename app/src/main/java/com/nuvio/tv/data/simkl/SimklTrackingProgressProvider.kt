@@ -117,6 +117,9 @@ class SimklTrackingProgressProvider @Inject constructor(
     override fun isHiddenFromProgress(contentId: String): Boolean =
         syncRepository.projection.value.isHidden(contentId)
 
+    override fun alternateContentIds(contentId: String): List<String> =
+        syncRepository.projection.value.alternateContentIds(contentId)
+
     override fun isTrackedAsWatching(contentId: String): Boolean =
         syncRepository.projection.value.isTrackedAsWatching(contentId)
 

@@ -217,6 +217,52 @@ fun SimklLibraryEntry.matchesSimklContentId(contentId: String): Boolean {
     return parsed.sharesIdentityWith(candidateIds)
 }
 
+/**
+ * Content ids a meta addon could answer for when [contentId] itself resolves to nothing.
+ *
+ * Simkl models a franchise as one entry per season or cour, each with its own ids, so the newest
+ * cour can carry an IMDB id no addon has heard of while the entries beside it carry the one every
+ * addon knows. Re:Zero's airing run arrives as tt36501927, which Cinemeta answers nothing for,
+ * while its siblings carry tt5607616. Entries sharing a TVDB id are the same show to those addons,
+ * which makes their ids usable stand-ins for artwork and episode lists.
+ *
+ * Ordered by how widely each id namespace is served, so the first attempt is the likeliest to land.
+ */
+fun SimklSyncSnapshot.alternateContentIdsFor(contentId: String): List<String> {
+    val normalized = contentId.trim()
+    if (normalized.isEmpty()) return emptyList()
+    val matches = entries.filter { entry -> entry.matchesSimklContentId(normalized) }
+    if (matches.isEmpty()) return emptyList()
+
+    val tvdbIds = matches.mapNotNullTo(mutableSetOf()) { entry ->
+        entry.media?.ids?.idValue("tvdb")?.takeIf(String::isNotBlank)
+    }
+    val related = if (tvdbIds.isEmpty()) {
+        matches
+    } else {
+        entries.filter { entry ->
+            entry.media?.ids?.idValue("tvdb")?.takeIf(String::isNotBlank) in tvdbIds
+        }
+    }
+    val media = (matches + related).mapNotNull(SimklLibraryEntry::media)
+
+    fun idsFor(key: String, prefix: String): List<String> = media
+        .mapNotNull { entry -> entry.ids.idValue(key)?.takeIf(String::isNotBlank) }
+        .map { value -> "$prefix$value" }
+
+    return buildList {
+        addAll(idsFor("imdb", ""))
+        addAll(idsFor("tmdb", "tmdb:"))
+        addAll(idsFor("tvdb", "tvdb:"))
+        addAll(idsFor("kitsu", "kitsu:"))
+        addAll(idsFor("mal", "mal:"))
+        addAll(idsFor("anilist", "anilist:"))
+        addAll(idsFor("anidb", "anidb:"))
+    }
+        .distinct()
+        .filterNot { candidate -> candidate.equals(normalized, ignoreCase = true) }
+}
+
 private fun SimklLibraryEntry.toWatchedItem(
     contentId: String,
     contentType: String,

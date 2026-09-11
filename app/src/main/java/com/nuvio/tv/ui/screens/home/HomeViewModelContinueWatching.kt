@@ -2374,6 +2374,7 @@ private fun resolveNextUpVideoFromMeta(
 }
 
 private const val CW_META_NEGATIVE_CACHE_TTL_MS = 5 * 60_000L
+private const val CW_META_ALTERNATE_ID_LIMIT = 4
 
 private suspend fun HomeViewModel.resolveMetaForProgress(
     progress: WatchProgress,
@@ -2404,6 +2405,14 @@ private suspend fun HomeViewModel.resolveMetaForProgress(
     val idCandidates = buildList {
         add(progress.contentId)
         if (progress.contentId.startsWith("tmdb:")) add(progress.contentId.substringAfter(':'))
+        // A tracker gives each season or cour of a franchise its own ids, and the one currently
+        // airing often carries an id no installed meta addon answers for. Its sibling entries
+        // describe the same show under an id they do serve.
+        addAll(
+            watchProgressRepository
+                .activeProviderAlternateContentIds(progress.contentId)
+                .take(CW_META_ALTERNATE_ID_LIMIT)
+        )
     }.distinct()
 
     val typeCandidates = listOf(progress.contentType, "series", "tv").distinct()

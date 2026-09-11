@@ -47,6 +47,16 @@ interface TrackingProgressProvider {
      * show does not keep offering episodes. Providers without the concept answer true and
      * behave as before.
      */
+    /**
+     * Other ids the provider knows this content under, most likely to be served by a meta addon
+     * first.
+     *
+     * Trackers split a franchise into one entry per season or cour and hand each its own ids, so
+     * the id a row arrives under is not always one an addon can answer for. The sibling entries of
+     * the same show usually carry an id that is.
+     */
+    fun alternateContentIds(contentId: String): List<String> = emptyList()
+
     fun isTrackedAsWatching(contentId: String): Boolean = true
     fun continueWatchingCutoffEpochMs(daysCap: Int, nowEpochMs: Long): Long? = null
     fun shouldUseAsNextUpSeed(progress: WatchProgress, nowEpochMs: Long): Boolean =
