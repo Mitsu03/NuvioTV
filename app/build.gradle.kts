@@ -104,8 +104,8 @@ android {
         applicationId = "com.nuvio.tv"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1053
-        versionName = "0.8.12-beta"
+        versionCode = 1062
+        versionName = "1.0.0"
 
         buildConfigField("String", "PARENTAL_GUIDE_API_URL", "\"${localProperties.getProperty("PARENTAL_GUIDE_API_URL", "")}\"")
         buildConfigField("String", "INTRODB_API_URL", "\"${localProperties.getProperty("INTRODB_API_URL", "")}\"")
@@ -145,8 +145,42 @@ android {
         buildConfigField("String", "SENTRY_DSN", buildConfigString(sentryDsn))
 
         // In-app updater (GitHub Releases)
-        buildConfigField("String", "GITHUB_OWNER", "\"NuvioMedia\"")
-        buildConfigField("String", "GITHUB_REPO", "\"NuvioTV\"")
+        buildConfigField(
+            "String",
+            "GITHUB_OWNER",
+            buildConfigString(
+                resolveProperty(
+                    devProperties,
+                    localProperties,
+                    "NUVIO_UPDATE_GITHUB_OWNER",
+                    "NuvioMedia"
+                )
+            )
+        )
+        buildConfigField(
+            "String",
+            "GITHUB_REPO",
+            buildConfigString(
+                resolveProperty(
+                    devProperties,
+                    localProperties,
+                    "NUVIO_UPDATE_GITHUB_REPO",
+                    "NuvioTV"
+                )
+            )
+        )
+        buildConfigField(
+            "boolean",
+            "AUTOSYNC_FORK",
+            parseBooleanProperty(
+                resolveProperty(
+                    devProperties,
+                    localProperties,
+                    "AUTOSYNC_FORK",
+                    "false"
+                )
+            ).toString()
+        )
     }
 
     flavorDimensions += "distribution"
@@ -494,7 +528,7 @@ dependencies {
     // Local nextlib-mediainfo fork (static FFmpeg; no libav*.so in final AAR)
     implementation(files("libs/nextlib-mediainfo-local.aar"))
     implementation("io.github.abdallahmehiz:mpv-android-lib:0.1.12")
-    implementation("dev.chrisbanes.haze:haze-android:0.7.3") {
+    implementation("dev.chrisbanes.haze:haze-android:1.7.2") {
         exclude(group = "org.jetbrains.compose.ui")
         exclude(group = "org.jetbrains.compose.foundation")
     }

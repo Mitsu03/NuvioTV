@@ -219,6 +219,8 @@
     <string name="detail_marked_episodes_unwatched">Episodes marked as unwatched: %1$d</string>
     <string name="detail_marked_previous_watched">Previous episodes marked as watched: %1$d</string>
 
+    <string name="playback_unavailable">Playback unavailable</string>
+    <string name="playback_unavailable_message">Playback isn’t available for this title with your current setup.</string>
     <string name="detail_btn_play">Play</string>
     <string name="detail_btn_resume">Resume</string>
     <string name="detail_btn_play_episode">Play S%1$d E%2$d</string>
@@ -336,10 +338,33 @@
     <string name="theme_color_amber">Amber</string>
     <string name="theme_color_rose">Rose</string>
     <string name="theme_color_white">White</string>
+    <string name="theme_color_custom">Custom</string>
+    <string name="custom_theme_title">Your custom gradient</string>
+    <string name="custom_theme_subtitle">Choose three colors for your theme. Select a color to edit it.</string>
+    <string name="custom_theme_solid_title">Your custom color</string>
+    <string name="custom_theme_solid_subtitle">Choose a color for your theme.</string>
+    <string name="custom_theme_mode_gradient">Gradient</string>
+    <string name="custom_theme_mode_solid">Single color</string>
+    <string name="custom_theme_color_number">Color %1$d</string>
+    <string name="custom_theme_hue">Hue</string>
+    <string name="custom_theme_saturation">Saturation</string>
+    <string name="custom_theme_brightness">Brightness</string>
+    <string name="custom_theme_enter_hex">Enter hex code</string>
+    <string name="custom_theme_hex_title">Hex color</string>
+    <string name="custom_theme_hex_hint">Choose six characters (0–9, A–F). Your first key replaces the current code.</string>
+    <string name="custom_theme_hex_clear">Clear</string>
+    <string name="custom_theme_hex_delete">Delete</string>
+    <string name="custom_theme_use_color">Use color</string>
+    <string name="custom_theme_save">Save theme</string>
+    <string name="custom_theme_remote_hint">← → Adjust   ·   ↑ ↓ Move   ·   Hold to adjust faster</string>
+    <string name="custom_theme_preview">PREVIEW</string>
+    <string name="custom_theme_preview_ring">Focused Item</string>
     <string name="appearance_amoled_mode">AMOLED Mode</string>
     <string name="appearance_amoled_mode_subtitle">Use pure black for app backgrounds</string>
     <string name="appearance_amoled_surfaces_mode">Pure Black Surfaces</string>
     <string name="appearance_amoled_surfaces_mode_subtitle">Also make cards, panels, and containers pure black</string>
+    <string name="appearance_startup_splash">Startup Splash</string>
+    <string name="appearance_startup_splash_subtitle">Show logo and loading indicator after selecting a profile</string>
     <string name="appearance_settings_style">Settings Style</string>
     <string name="appearance_settings_style_subtitle">Choose how the settings screens are presented</string>
     <string name="appearance_launcher_artwork">Launcher Artwork</string>
@@ -394,6 +419,9 @@
     <string name="licenses_attributions_section_app">APP LICENSE</string>
     <string name="licenses_attributions_section_data">DATA &amp; SERVICES</string>
     <string name="licenses_attributions_section_playback">ANDROID PLAYBACK LICENSES</string>
+    <string name="licenses_attributions_section_ui">UI LIBRARIES</string>
+    <string name="licenses_attributions_haze_title">Haze 1.7.2</string>
+    <string name="licenses_attributions_haze_body">Used for background blur effects. Created by Chris Banes. Licensed under the Apache License, Version 2.0.</string>
     <string name="licenses_attributions_nuvio_title">Nuvio TV</string>
     <string name="licenses_attributions_nuvio_body">Source code and license terms are available in the project repository. Licensed under the GNU General Public License v3.0.</string>
     <string name="licenses_attributions_tmdb_title">The Movie Database (TMDB)</string>
@@ -452,6 +480,7 @@
     <string name="tracking_simkl_anime_id_imdb">Prefer IMDB</string>
     <string name="tracking_simkl_anime_id_mal">Prefer MyAnimeList</string>
     <string name="tracking_simkl_anime_id_kitsu">Prefer Kitsu</string>
+    <string name="tracking_simkl_anime_id_tvdb">Prefer TVDB</string>
     <string name="tracking_status_connected">Connected</string>
     <string name="tracking_status_disconnected">Not connected</string>
     <string name="tracking_status_waiting">Waiting for approval</string>
@@ -702,6 +731,10 @@
     <string name="auto_skip_recap_sub">Skip recap segments automatically.</string>
     <string name="auto_skip_outro">Outro / Ending</string>
     <string name="auto_skip_outro_sub">Skip outros and anime endings automatically.</string>
+    <string name="auto_skip_movie_credits">End Credits</string>
+    <string name="auto_skip_movie_credits_sub">Skip movie credits automatically, keeping post-credits scenes.</string>
+    <string name="skip_movie_credits">Skip Credits</string>
+    <string name="skip_to_post_credits">Skip to Post-Credits</string>
     <string name="playback_auto_frame_rate">Auto Frame Rate &amp; Resolution</string>
     <string name="playback_section_player">Player &amp; Stream Selection</string>
     <string name="playback_section_player_desc">Player preference, auto-play, and source filtering.</string>
@@ -809,6 +842,8 @@
     <string name="dv7_libdovi_mode_3_sub" translatable="false">Convert Profile 5 (DV5) streams to Profile 8.1. Same conversion the Convert DV5 to DV8.1 toggle uses.</string>
     <string name="dv7_libdovi_mode_4_title" translatable="false">Mode 4 — 8.4 (static)</string>
     <string name="dv7_libdovi_mode_4_sub" translatable="false">Convert to static profile 8.4.</string>
+    <string name="audio_mpv_hi10p_gnext_sw_title">Hi10P G-NEXT SW fallback (MPV-only)</string>
+    <string name="audio_mpv_hi10p_gnext_sw_subtitle">Use G-NEXT software decoding when stream details identify H.264 Hi10P. Off by default; enable only if Hi10P playback freezes or fails.</string>
     <string name="audio_mpv_hwdec_title">Hardware Decoding (MPV-only)</string>
     <string name="audio_mpv_hwdec_dialog_subtitle">Select how libmpv should use hardware decoders.</string>
     <string name="audio_mpv_hwdec_legacy_direct_copy">Legacy (direct -&gt; copy)</string>
@@ -945,6 +980,8 @@
     <string name="layout_section_content_desc">Control what appears on home and search.</string>
     <string name="layout_collapse_sidebar">Collapse Sidebar</string>
     <string name="layout_collapse_sidebar_sub">Hide sidebar by default; show when focused.</string>
+    <string name="layout_hide_floating_pill">Hide Floating Pill</string>
+    <string name="layout_hide_floating_pill_sub">Hide the floating navigation indicator on the home screen.</string>
     <string name="layout_modern_sidebar">Modern Sidebar</string>
     <string name="layout_modern_sidebar_sub">Enable floating sidebar navigation.</string>
     <string name="layout_modern_sidebar_blur">Modern Sidebar Blur</string>
@@ -1685,6 +1722,7 @@
     <string name="player_subtitle_delay">Subtitles Delay</string>
     <string name="player_error_title">Playback Error</string>
     <string name="player_go_back">Go Back</string>
+    <string name="player_switch_to_mpv">Switch to MPV Player</string>
     <string name="player_report_issue">Report Issue</string>
     <string name="player_report_issue_sending">Sending playback report...</string>
     <string name="player_report_issue_sending_button">Sending...</string>
@@ -1857,6 +1895,7 @@
     <string name="search_start_subtitle_no_discover">Discover is disabled. Enter at least 2 characters</string>
     <string name="search_recent_title">Recent searches</string>
     <string name="search_recent_clear">Clear history</string>
+    <string name="cd_remove_recent_search">Remove %1$s from recent searches</string>
     <string name="search_voice_no_speech">No speech detected. Try again.</string>
     <string name="search_voice_mic_permission">Microphone permission is required for voice search.</string>
     <string name="search_voice_failed">Voice recognition failed. Try again.</string>
