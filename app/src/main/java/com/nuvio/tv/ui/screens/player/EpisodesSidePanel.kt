@@ -79,6 +79,8 @@ import androidx.compose.runtime.withFrameNanos
 import kotlinx.coroutines.launch as coroutineLaunch
 import androidx.compose.ui.res.stringResource
 import com.nuvio.tv.R
+import com.nuvio.tv.data.filler.isFiller
+import com.nuvio.tv.ui.components.fillerTagged
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -578,6 +580,7 @@ private fun EpisodesListView(
                             isCurrent = isCurrent,
                             isWatched = isWatched,
                             blurUnwatched = uiState.blurUnwatchedEpisodes,
+                            isFiller = uiState.fillerEpisodes.isFiller(episode.season, episode.episode),
                             focusRequester = episodesFocusRequester,
                             requestInitialFocus = requestInitialFocus,
                             availableSeasons = sortedSeasons,
@@ -664,6 +667,7 @@ private fun EpisodeItem(
     isCurrent: Boolean,
     isWatched: Boolean = false,
     blurUnwatched: Boolean = false,
+    isFiller: Boolean = false,
     focusRequester: FocusRequester,
     requestInitialFocus: Boolean,
     availableSeasons: List<Int> = emptyList(),
@@ -674,7 +678,9 @@ private fun EpisodeItem(
     val shouldBlur = blurUnwatched && !isWatched
     val isRtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
     val context = LocalContext.current
-    val episodeTitle = episode.title.localizeEpisodeTitle(context).ifBlank { context.getString(R.string.episodes_episode) }
+    val episodeTitle = episode.title.localizeEpisodeTitle(context)
+        .ifBlank { context.getString(R.string.episodes_episode) }
+        .fillerTagged(isFiller)
     val formattedDate = remember(episode.released) {
         episode.released?.let { formatReleaseDate(it) }?.takeIf { it.isNotBlank() }
     }

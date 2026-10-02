@@ -64,6 +64,7 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import coil3.request.transformations
 import com.nuvio.tv.R
+import com.nuvio.tv.ui.components.fillerTagged
 import com.nuvio.tv.domain.model.EpisodeOptionsOverlayStyle
 import com.nuvio.tv.domain.model.Video
 import com.nuvio.tv.ui.components.ImdbRatingSourceLabel
@@ -86,6 +87,7 @@ internal fun EpisodeOptionsOverlay(
     imdbRating: Double? = null,
     isWatched: Boolean,
     blurUnwatchedEpisodes: Boolean = false,
+    isFiller: Boolean = false,
     style: EpisodeOptionsOverlayStyle = EpisodeOptionsOverlayStyle.ARTWORK,
     isPending: Boolean,
     isSeasonFullyWatched: Boolean = false,
@@ -112,7 +114,7 @@ internal fun EpisodeOptionsOverlay(
     val detailsFocusRequester = remember { FocusRequester() }
     val detailsScrollState = rememberScrollState()
     val coroutineScope = rememberCoroutineScope()
-    val title = episode.title.localizeEpisodeTitle(context)
+    val title = episode.title.localizeEpisodeTitle(context).fillerTagged(isFiller)
     val description = episode.overview?.trim().orEmpty()
     val titleStyle = episodeOverlayTitleStyle(title.length)
     val descriptionStyle = episodeOverlayDescriptionStyle(description.length)

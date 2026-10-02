@@ -120,6 +120,8 @@ import coil3.compose.rememberAsyncImagePainter
 import coil3.request.ImageRequest
 import androidx.compose.ui.res.stringResource
 import com.nuvio.tv.R
+import com.nuvio.tv.data.filler.isFiller
+import com.nuvio.tv.ui.components.fillerTagged
 import com.nuvio.tv.ui.util.localizeEpisodeTitle
 import com.nuvio.tv.data.local.InternalPlayerEngine
 import com.nuvio.tv.data.local.LibassRenderType
@@ -988,7 +990,10 @@ fun PlayerScreen(
             onClose = { viewModel.onEvent(PlayerEvent.OnDismissPauseOverlay) },
             title = uiState.title,
             logo = uiState.logo,
-            episodeTitle = uiState.currentEpisodeTitle,
+            episodeTitle = uiState.currentEpisodeTitle?.takeIf { it.isNotBlank() }
+                ?.localizeEpisodeTitle(LocalContext.current)
+                ?.fillerTagged(uiState.fillerEpisodes.isFiller(uiState.currentSeason, uiState.currentEpisode))
+                ?: uiState.currentEpisodeTitle,
             season = uiState.currentSeason,
             episode = uiState.currentEpisode,
             year = uiState.releaseYear,
@@ -1066,7 +1071,7 @@ fun PlayerScreen(
         val endPromptEpisode = nextEpisodeForEndPrompt.takeIf { shouldConfirmNextEpisodeOnEnd }
         if (endPromptEpisode != null) {
             NextEpisodeEndPromptOverlay(
-                nextEpisode = endPromptEpisode,
+                nextEpisode = endPromptEpisode.withDisplayedFillerTag(uiState.fillerEpisodes),
                 onContinue = continueToNextEpisodeFromEndPrompt,
                 onReturnToDetails = returnToDetailsFromEndPrompt
             )
@@ -1135,7 +1140,7 @@ fun PlayerScreen(
                     !uiState.showSubtitleTimingDialog &&
                     !uiState.showSpeedDialog &&
                     !uiState.showMoreDialog
-            },
+            }?.let { mode -> mode.copyWithNextEpisode(mode.nextEpisode.withDisplayedFillerTag(uiState.fillerEpisodes)) },
             controlsVisible = uiState.showControls,
             blurUnwatchedEpisodes = uiState.blurUnwatchedEpisodes,
             nextEpisodeFocusRequester = nextEpisodeFocusRequester,
@@ -2038,6 +2043,7 @@ private fun PlayerControlsOverlay(
                         val localizedEpisodeTitle = uiState.currentEpisodeTitle
                             ?.takeIf { it.isNotBlank() }
                             ?.localizeEpisodeTitle(appContext)
+                            ?.fillerTagged(uiState.fillerEpisodes.isFiller(uiState.currentSeason, uiState.currentEpisode))
                         val episodeInfo = if (localizedEpisodeTitle != null) {
                             "$seasonEpisodeCode • $localizedEpisodeTitle"
                         } else {
@@ -3495,4 +3501,11 @@ private fun PlayerBufferingIndicator(
             LoadingIndicator()
         }
     }
+}
+
+/** Tags the next episode for display; the title is localised first because the tag breaks that pattern match. */
+@Composable
+private fun NextEpisodeInfo.withDisplayedFillerTag(fillerEpisodes: Set<Pair<Int, Int>>): NextEpisodeInfo {
+    if (isOtherType || !fillerEpisodes.isFiller(season, episode)) return this
+    return copy(title = title.localizeEpisodeTitle(LocalContext.current).fillerTagged(true))
 }
