@@ -812,6 +812,8 @@
     <string name="layout_use_episode_thumbnails_cw_sub">Utilizar as miniaturas dos episódios como imagem predefinida. Quando desativado, utiliza o fundo.</string>
     <string name="layout_blur_unwatched">Desfocar episódios não vistos</string>
     <string name="layout_blur_unwatched_sub">Desfocar as miniaturas dos episódios até serem vistos para evitar spoilers.</string>
+    <string name="layout_tag_filler_episodes">Assinalar episódios filler</string>
+    <string name="layout_tag_filler_episodes_sub">Acrescenta [Filler] aos episódios de anime que o AnimeFillerList classifica como filler puro. Episódios mistos de canon e filler não são assinalados.</string>
     <string name="layout_blur_cw_next_up">Desfocar não vistos no Continuar a Ver</string>
     <string name="layout_blur_cw_next_up_sub">Desfocar as miniaturas dos episódios seguintes no Continuar a Ver para evitar spoilers.</string>
     <string name="layout_next_up_furthest_episode">Seguinte a partir do episódio mais avançado</string>

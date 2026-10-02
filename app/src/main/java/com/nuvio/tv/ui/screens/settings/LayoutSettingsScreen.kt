@@ -523,6 +523,18 @@ fun LayoutSettingsContent(
                         onFocused = { focusedSection = LayoutSettingsSection.DETAIL_PAGE }
                     )
 
+                    CompactToggleRow(
+                        title = stringResource(R.string.layout_tag_filler_episodes),
+                        subtitle = stringResource(R.string.layout_tag_filler_episodes_sub),
+                        checked = uiState.tagFillerEpisodes,
+                        onToggle = {
+                            viewModel.onEvent(
+                                LayoutSettingsEvent.SetTagFillerEpisodes(!uiState.tagFillerEpisodes)
+                            )
+                        },
+                        onFocused = { focusedSection = LayoutSettingsSection.DETAIL_PAGE }
+                    )
+
                     SettingsActionRow(
                         title = stringResource(R.string.layout_episode_ratings),
                         subtitle = stringResource(R.string.layout_episode_ratings_sub),

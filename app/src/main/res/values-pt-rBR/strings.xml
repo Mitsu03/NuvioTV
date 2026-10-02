@@ -960,6 +960,8 @@
     <string name="layout_use_episode_thumbnails_cw_sub">Usa imagens do episódio em vez da arte da série</string>
     <string name="layout_blur_unwatched">Desfocar não assistidos</string>
     <string name="layout_blur_unwatched_sub">Desfoque a imagem para evitar spoilers.</string>
+    <string name="layout_tag_filler_episodes">Marcar episódios filler</string>
+    <string name="layout_tag_filler_episodes_sub">Adiciona [Filler] aos episódios de anime que o AnimeFillerList classifica como filler puro. Episódios mistos de canon e filler não são marcados.</string>
     <string name="layout_episode_options_overlay">Opções de Episódio</string>
     <string name="layout_episode_options_overlay_sub">Escolha como será exibido ao segurar um episódio.</string>
     <string name="layout_episode_options_overlay_none">Nenhum</string>

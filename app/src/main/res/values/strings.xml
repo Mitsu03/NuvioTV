@@ -991,6 +991,9 @@
     <string name="layout_use_episode_thumbnails_cw_sub">Use episode thumbnails as default image. When disabled, uses backdrop.</string>
     <string name="layout_blur_unwatched">Blur Unwatched Episodes</string>
     <string name="layout_blur_unwatched_sub">Blur episode thumbnails until watched to avoid spoilers.</string>
+    <string name="layout_tag_filler_episodes">Tag Filler Episodes</string>
+    <string name="layout_tag_filler_episodes_sub">Adds [Filler] to anime episodes that AnimeFillerList marks as pure filler. Mixed canon/filler episodes are left alone.</string>
+    <string name="episode_filler_tag" translatable="false">[Filler]</string>
     <string name="layout_episode_options_overlay">Episode Options Overlay</string>
     <string name="layout_episode_options_overlay_sub">Choose the appearance shown when holding an episode.</string>
     <string name="layout_episode_options_overlay_none">None</string>

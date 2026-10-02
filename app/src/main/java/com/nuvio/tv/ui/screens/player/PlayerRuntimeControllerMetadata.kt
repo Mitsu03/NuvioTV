@@ -73,6 +73,12 @@ internal fun PlayerRuntimeController.applyMetaDetails(meta: Meta) {
             isNextEpisodeMetadataResolved = true
         )
     }
+    if (fillerEpisodeSettings.enabled.value) {
+        scope.launch {
+            val keys = fillerEpisodeRepository.fillerEpisodeKeys(meta)
+            _uiState.update { state -> if (state.fillerEpisodes == keys) state else state.copy(fillerEpisodes = keys) }
+        }
+    }
 }
 
 internal fun PlayerRuntimeController.resolveDescription(meta: Meta): String? {

@@ -97,6 +97,8 @@ class MetaDetailsViewModel @Inject constructor(
     private val profileManager: ProfileManager,
     private val metaDetailsSessionState: MetaDetailsSessionState,
     private val watchedSeriesStateHolder: com.nuvio.tv.data.local.WatchedSeriesStateHolder,
+    private val fillerEpisodeRepository: com.nuvio.tv.data.filler.FillerEpisodeRepository,
+    private val fillerEpisodeSettings: com.nuvio.tv.data.filler.FillerEpisodeSettings,
     val posterOptions: com.nuvio.tv.ui.components.posteroptions.PosterOptionsController,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -158,6 +160,7 @@ class MetaDetailsViewModel @Inject constructor(
         observeMovieWatched()
         observeRelatedWatchedStatus()
         observeBlurUnwatchedEpisodes()
+        observeFillerEpisodes()
         observeEpisodeOptionsOverlayStyle()
         observeOverallRatingsVisibility()
         observeDetailImdbRatingsVisibility()
@@ -579,6 +582,23 @@ class MetaDetailsViewModel @Inject constructor(
                     if (state.isMovieWatched == watched) state else state.copy(isMovieWatched = watched)
                 }
             }
+        }
+    }
+
+    /** Tags are display-only, so they live beside the episodes rather than in their titles. */
+    private fun observeFillerEpisodes() {
+        viewModelScope.launch {
+            combine(
+                fillerEpisodeSettings.enabled,
+                _uiState.map { it.meta }.distinctUntilChanged(),
+            ) { enabled, meta -> if (enabled) meta else null }
+                .distinctUntilChanged()
+                .collectLatest { meta ->
+                    val keys = meta?.let { fillerEpisodeRepository.fillerEpisodeKeys(it) }.orEmpty()
+                    _uiState.update { state ->
+                        if (state.fillerEpisodes == keys) state else state.copy(fillerEpisodes = keys)
+                    }
+                }
         }
     }
 

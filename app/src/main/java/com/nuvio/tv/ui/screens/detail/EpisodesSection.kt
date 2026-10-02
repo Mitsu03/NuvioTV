@@ -80,6 +80,8 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import coil3.request.transformations
 import com.nuvio.tv.R
+import com.nuvio.tv.data.filler.isFiller
+import com.nuvio.tv.ui.components.fillerTagged
 import com.nuvio.tv.domain.model.Video
 import com.nuvio.tv.domain.model.EpisodeOptionsOverlayStyle
 import com.nuvio.tv.ui.components.FocusMarqueeText
@@ -269,6 +271,7 @@ fun EpisodesRow(
     watchedEpisodes: Set<Pair<Int, Int>> = emptySet(),
     episodeWatchedPendingKeys: Set<String> = emptySet(),
     blurUnwatchedEpisodes: Boolean = false,
+    fillerEpisodes: Set<Pair<Int, Int>> = emptySet(),
     episodeOptionsOverlayStyle: EpisodeOptionsOverlayStyle = EpisodeOptionsOverlayStyle.ARTWORK,
     posterCardCornerRadiusDp: Int = 12,
     onEpisodeClick: (Video) -> Unit,
@@ -399,6 +402,7 @@ fun EpisodesRow(
                 imdbRating = imdbRating,
                 isMarkedWatched = isMarkedWatched,
                 blurUnwatched = blurUnwatchedEpisodes,
+                isFiller = fillerEpisodes.isFiller(episode.season, episode.episode),
                 suppressMarquee = isOverlayOpen,
                 cardMetrics = cardMetrics,
                 onClick = episodeOnClick,
@@ -433,6 +437,7 @@ fun EpisodesRow(
             },
             isWatched = selectedWatched,
             blurUnwatchedEpisodes = blurUnwatchedEpisodes,
+            isFiller = fillerEpisodes.isFiller(selectedEpisode.season, selectedEpisode.episode),
             style = episodeOptionsOverlayStyle,
             isPending = isPending,
             isSeasonFullyWatched = isSeasonFullyWatched,
@@ -491,6 +496,7 @@ private fun EpisodeCard(
     imdbRating: Double? = null,
     isMarkedWatched: Boolean = false,
     blurUnwatched: Boolean = false,
+    isFiller: Boolean = false,
     suppressMarquee: Boolean = false,
     cardMetrics: EpisodeCardMetrics,
     onClick: () -> Unit,
@@ -754,7 +760,7 @@ private fun EpisodeCard(
             val bgPainter = remember(cardBgColor) { androidx.compose.ui.graphics.painter.ColorPainter(cardBgColor) }
             AsyncImage(
                 model = thumbnailRequest,
-                contentDescription = episode.title.localizeEpisodeTitle(context),
+                contentDescription = episode.title.localizeEpisodeTitle(context).fillerTagged(isFiller),
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
@@ -827,7 +833,7 @@ private fun EpisodeCard(
                 }
 
                 FocusMarqueeText(
-                    text = episode.title.localizeEpisodeTitle(context),
+                    text = episode.title.localizeEpisodeTitle(context).fillerTagged(isFiller),
                     focused = isFocused && !suppressMarquee,
                     style = titleStyle,
                     color = textPrimary,
