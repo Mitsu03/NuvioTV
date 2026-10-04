@@ -18,11 +18,14 @@ internal fun PlayerRuntimeController.attachMpvView(view: NuvioMpvSurfaceView?) {
     if (view == null) return
     if (!isUsingMpvEngine()) return
     if (currentStreamUrl.isBlank()) return
+    if (!mpvMediaLoadPrepared) return
     if (mpvInitializationInProgress) return
 
     runCatching {
         performPendingMpvHardRestartIfNeeded(view)
+        view.applyHi10pGnextSoftwareFallback(shouldUseMpvHi10pGnextSoftwareFallback())
         view.applyHardwareDecodeMode(mpvHardwareDecodeModeSetting)
+        registerMpvEventRelay(view)
         view.setMedia(currentStreamUrl, currentHeaders)
         view.setPlaybackSpeed(_uiState.value.playbackSpeed)
         view.applyAudioAmplificationDb(_uiState.value.audioAmplificationDb)
@@ -39,6 +42,8 @@ internal fun PlayerRuntimeController.attachMpvView(view: NuvioMpvSurfaceView?) {
         view.setPaused(false)
         applyPendingMpvSeekIfNeeded(view)
         hasRenderedFirstFrame = false
+        endDetectionArmed = false
+        mpvEofSeenClear = false
         _uiState.update {
             it.copy(
                 isBuffering = true,
@@ -54,7 +59,13 @@ internal fun PlayerRuntimeController.attachMpvView(view: NuvioMpvSurfaceView?) {
         scheduleHideControls()
         emitScrobbleStart()
     }.onFailure {
-        val detailedError = it.message ?: context.getString(com.nuvio.tv.R.string.player_error_mpv_surface_failed)
+        val technical = it.message?.trim()?.takeIf { message -> message.isNotEmpty() }
+        val explanation = context.getString(com.nuvio.tv.R.string.player_error_mpv_surface_failed)
+        val detailedError = if (technical == null || technical.equals(explanation, ignoreCase = true)) {
+            explanation
+        } else {
+            "$explanation\n\n$technical"
+        }
         if (
             maybeAutoSwitchInternalPlayerOnStartupError(
                 detailedError = detailedError,
@@ -80,6 +91,7 @@ internal fun PlayerRuntimeController.initializeMpvPlayer(
     headers: Map<String, String>,
     allowEngineFailover: Boolean = true
 ) {
+    mpvMediaLoadPrepared = true
     _exoPlayer?.release()
     _exoPlayer = null
     trackSelector = null
@@ -115,7 +127,9 @@ internal fun PlayerRuntimeController.initializeMpvPlayer(
             showOverlay = true
         )
         performPendingMpvHardRestartIfNeeded(view)
+        view.applyHi10pGnextSoftwareFallback(shouldUseMpvHi10pGnextSoftwareFallback())
         view.applyHardwareDecodeMode(mpvHardwareDecodeModeSetting)
+        registerMpvEventRelay(view)
         val initialResumePosition = resolvePendingInitialResumePosition()
             .takeIf { it > 0L }
             ?: (_uiState.value.pendingSeekPosition?.coerceAtLeast(0L) ?: 0L)
@@ -146,6 +160,8 @@ internal fun PlayerRuntimeController.initializeMpvPlayer(
         applyPendingMpvSeekIfNeeded(view)
 
         hasRenderedFirstFrame = false
+        endDetectionArmed = false
+        mpvEofSeenClear = false
         _uiState.update {
             it.copy(
                 isBuffering = true,
@@ -166,7 +182,13 @@ internal fun PlayerRuntimeController.initializeMpvPlayer(
         emitScrobbleStart()
     }.onFailure { error ->
         Log.e(PlayerRuntimeController.TAG, "libmpv initialize failed: ${error.message}", error)
-        val detailedError = error.message ?: context.getString(com.nuvio.tv.R.string.player_error_mpv_playback_failed)
+        val technical = error.message?.trim()?.takeIf { it.isNotEmpty() }
+        val explanation = context.getString(com.nuvio.tv.R.string.player_error_mpv_playback_failed)
+        val detailedError = if (technical == null || technical.equals(explanation, ignoreCase = true)) {
+            explanation
+        } else {
+            "$explanation\n\n$technical"
+        }
         if (
             maybeAutoSwitchInternalPlayerOnStartupError(
                 detailedError = detailedError,
@@ -189,6 +211,7 @@ internal fun PlayerRuntimeController.initializeMpvPlayer(
 }
 
 internal fun PlayerRuntimeController.releaseMpvPlayer() {
+    unregisterMpvEventRelay()
     runCatching { mpvView?.releasePlayer() }
 }
 
@@ -260,7 +283,7 @@ internal fun PlayerRuntimeController.resumeForLifecycle() {
         // Re-create the MediaSession so media controls work in the foreground.
         if (currentMediaSession == null) {
             try {
-                currentMediaSession = androidx.media3.session.MediaSession.Builder(context, player).build()
+                currentMediaSession = androidx.media3.session.MediaSession.Builder(context, SafeMediaSessionPlayer(player)).build()
                 updateMediaSessionMetadata()
             } catch (e: Exception) {
                 e.printStackTrace()

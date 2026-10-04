@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.nuvio.tv.core.player.StreamAutoPlayPolicy
 import com.nuvio.tv.core.profile.ProfileManager
 import com.nuvio.tv.core.network.NetworkResult
+import com.nuvio.tv.core.poster.withCustomPosterUrls
 import com.nuvio.tv.core.tmdb.TmdbMetadataService
 import com.nuvio.tv.core.tmdb.TmdbMovieCollection
 import com.nuvio.tv.core.tmdb.TmdbService
@@ -54,6 +55,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -92,7 +95,11 @@ class MetaDetailsViewModel @Inject constructor(
     private val traktCommentsService: TraktCommentsService,
     private val traktRelatedService: TraktRelatedService,
     private val traktSettingsDataStore: TraktSettingsDataStore,
+    private val simklRelatedService: com.nuvio.tv.data.simkl.SimklRelatedService,
+    private val simklAuthRepository: com.nuvio.tv.data.simkl.SimklAuthRepository,
     private val layoutPreferenceDataStore: LayoutPreferenceDataStore,
+    private val episodeShuffleStore: com.nuvio.tv.data.local.EpisodeShuffleStore,
+    private val episodeShuffle: com.nuvio.tv.domain.model.EpisodeShuffle,
     private val playerSettingsDataStore: PlayerSettingsDataStore,
     private val profileManager: ProfileManager,
     private val metaDetailsSessionState: MetaDetailsSessionState,
@@ -107,7 +114,12 @@ class MetaDetailsViewModel @Inject constructor(
     private val preferredAddonBaseUrl: String? = savedStateHandle["addonBaseUrl"]
 
     private val _uiState = MutableStateFlow(MetaDetailsUiState())
-    val uiState: StateFlow<MetaDetailsUiState> = _uiState.asStateFlow()
+    private val shuffleVisit = System.nanoTime()
+    val uiState: StateFlow<MetaDetailsUiState> = combine(
+        _uiState, episodeShuffleStore.profiles, watchProgressRepository.continueWatching
+    ) { state, profile, progress ->
+        applyDetailShuffle(state, profile, progress, episodeShuffle, shuffleVisit, localizedContext)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, MetaDetailsUiState())
 
     private val _posterCardCornerRadiusDp = MutableStateFlow(12)
     val posterCardCornerRadiusDp: StateFlow<Int> = _posterCardCornerRadiusDp.asStateFlow()
@@ -132,6 +144,7 @@ class MetaDetailsViewModel @Inject constructor(
 
     private var trailerDelayMs = 7000L
     private var trailerAutoplayEnabled = false
+    private var trailerPlayInBackground = false
     private var trailerHasPlayed = false
     private var suppressSeasonAutoSwitch = false
 
@@ -258,10 +271,12 @@ class MetaDetailsViewModel @Inject constructor(
     private fun setTrailerPlaybackState(
         isPlaying: Boolean,
         showControls: Boolean,
-        hideLogo: Boolean
+        hideLogo: Boolean,
+        isBackgroundPlaying: Boolean = false
     ) {
         _uiState.update { state ->
             if (state.isTrailerPlaying == isPlaying &&
+                state.isBackgroundTrailerPlaying == isBackgroundPlaying &&
                 state.showTrailerControls == showControls &&
                 state.hideLogoDuringTrailer == hideLogo
             ) {
@@ -269,6 +284,7 @@ class MetaDetailsViewModel @Inject constructor(
             } else {
                 state.copy(
                     isTrailerPlaying = isPlaying,
+                    isBackgroundTrailerPlaying = isBackgroundPlaying,
                     showTrailerControls = showControls,
                     hideLogoDuringTrailer = hideLogo
                 )
@@ -299,7 +315,7 @@ class MetaDetailsViewModel @Inject constructor(
                 state.copy(
                     nextToWatch = nextToWatch,
                     selectedSeason = nextSeason,
-                    episodesForSeason = getEpisodesForSeason(meta.videos, nextSeason)
+                    episodesForSeason = getEpisodesForSeason(meta, nextSeason)
                 )
             } else {
                 state.copy(nextToWatch = nextToWatch)
@@ -312,6 +328,14 @@ class MetaDetailsViewModel @Inject constructor(
             trailerSettingsDataStore.settings.collectLatest { settings ->
                 trailerAutoplayEnabled = settings.enabled
                 trailerDelayMs = settings.delaySeconds * 1000L
+                trailerPlayInBackground = settings.playInBackground
+                _uiState.update { state ->
+                    if (state.pauseBackgroundTrailerOnScroll == settings.pauseOnScroll) {
+                        state
+                    } else {
+                        state.copy(pauseBackgroundTrailerOnScroll = settings.pauseOnScroll)
+                    }
+                }
                 if (!settings.enabled) {
                     idleTimerJob?.cancel()
                 }
@@ -486,14 +510,17 @@ class MetaDetailsViewModel @Inject constructor(
         if (providerProgressMap.isEmpty()) return
         val hasCompletedEntries = providerProgressMap.values.any { it.isCompleted() }
         if (!hasCompletedEntries) return
+        val profileId = profileManager.activeProfileId.value
 
         viewModelScope.launch(Dispatchers.IO) {
             if (!watchProgressRepository.activeProviderOwnsCompletedHistoryProjection()) return@launch
+            if (profileManager.activeProfileId.value != profileId) return@launch
 
             val contentId = _effectiveContentId.value
             val localWatched = watchedItemsPreferences
-                .getWatchedEpisodesForContent(contentId)
+                .getWatchedEpisodesForContent(contentId, profileId)
                 .first()
+            if (profileManager.activeProfileId.value != profileId) return@launch
             if (localWatched.isEmpty()) return@launch
 
             val staleEpisodes = localWatched.filter { (season, episode) ->
@@ -505,7 +532,8 @@ class MetaDetailsViewModel @Inject constructor(
                 Log.d(TAG, "revalidateWatchedEpisodes: pruning ${staleEpisodes.size} stale entries for $contentId")
                 watchedItemsPreferences.unmarkAsWatchedBatch(
                     contentId = contentId,
-                    episodes = staleEpisodes.toList()
+                    episodes = staleEpisodes.toList(),
+                    profileId = profileId
                 )
             }
         }
@@ -630,6 +658,30 @@ class MetaDetailsViewModel @Inject constructor(
         }
     }
 
+    suspend fun setEpisodeShuffle(settings: com.nuvio.tv.domain.model.EpisodeShuffleSettings): Boolean {
+        val meta = uiState.value.meta ?: return false
+        val profileId = profileManager.activeProfileId.value
+        val previous = uiState.value.episodeShuffle
+        return try {
+            episodeShuffleStore.save(meta.id, settings, profileId)
+            if (profileManager.activeProfileId.value != profileId) return false
+            if (previous.enabled != settings.enabled || (settings.enabled && previous.includeWatched != settings.includeWatched)) {
+                val message = when {
+                    !settings.enabled -> R.string.shuffle_disabled
+                    settings.includeWatched -> R.string.shuffle_enabled_all
+                    else -> R.string.shuffle_enabled_unwatched
+                }
+                showMessage(localizedContext.getString(message))
+            }
+            true
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            showMessage(localizedContext.getString(R.string.shuffle_save_failed), isError = true)
+            false
+        }
+    }
+
     private fun observeDetailImdbRatingsVisibility() {
         viewModelScope.launch {
             layoutPreferenceDataStore.detailImdbRatingsVisibility
@@ -696,7 +748,7 @@ class MetaDetailsViewModel @Inject constructor(
         viewModelScope.launch {
             cancelCommentsRequests()
             val mdbListSettings = mdbListSettingsDataStore.settings.first()
-            val isMdbListActive = mdbListSettings.enabled && mdbListSettings.apiKey.isNotBlank()
+            val isMdbListActive = mdbListRepository.isAvailable(mdbListSettings)
             _uiState.update {
                 it.copy(
                     isLoading = true,
@@ -901,15 +953,23 @@ class MetaDetailsViewModel @Inject constructor(
         // less canonical one (e.g. tmdb:) — Trakt stores progress under IMDB.
         syncEffectiveContentId(meta)
 
-        val seasons = meta.videos
-            .mapNotNull { it.season }
-            .distinct()
-            .sorted()
-            .ifEmpty {
-                // For "other" type content videos lack season/episode numbers.  
-                // Treat them as a single virtual season so the episodes UI can display them.
-                if (meta.videos.isNotEmpty()) listOf(1) else emptyList()
-            }
+        val seasons = if (meta.apiType.equals("tv", ignoreCase = true)) {
+            meta.videos
+                .filter { it.season != null || it.episode != null }
+                .map { it.season ?: 0 }
+                .distinct()
+                .sorted()
+        } else {
+            meta.videos
+                .mapNotNull { it.season }
+                .distinct()
+                .sorted()
+                .ifEmpty {
+                    // For "other" type content videos lack season/episode numbers.
+                    // Treat them as a single virtual season so the episodes UI can display them.
+                    if (meta.videos.isNotEmpty()) listOf(1) else emptyList()
+                }
+        }
 
         val defaultEpisodeSeason = findPreferredDefaultEpisode(meta)?.season
         // Prefer addon-specified default episode season, otherwise first regular season (> 0), fallback to season 0 (specials)
@@ -918,7 +978,7 @@ class MetaDetailsViewModel @Inject constructor(
             ?: seasons.firstOrNull { it > 0 }
             ?: seasons.firstOrNull()
             ?: 1
-        val episodesForSeason = getEpisodesForSeason(meta.videos, selectedSeason)
+        val episodesForSeason = getEpisodesForSeason(meta, selectedSeason)
 
         _uiState.update {
             // If nextToWatch already set a season (from pre-computed remap), prefer it
@@ -928,7 +988,7 @@ class MetaDetailsViewModel @Inject constructor(
                 ?.takeIf { s -> s in seasons }
                 ?: selectedSeason
             val effectiveEpisodes = if (effectiveSeason != selectedSeason) {
-                getEpisodesForSeason(meta.videos, effectiveSeason)
+                getEpisodesForSeason(meta, effectiveSeason)
             } else {
                 episodesForSeason
             }
@@ -1222,15 +1282,17 @@ class MetaDetailsViewModel @Inject constructor(
     private fun loadMoreLikeThisAsync(meta: Meta) {
         moreLikeThisJob?.cancel()
         moreLikeThisJob = viewModelScope.launch {
-            val source = if (shouldLoadTraktMoreLikeThis(meta)) {
-                MoreLikeThisSource.TRAKT
-            } else {
-                val settings = tmdbSettingsDataStore.settings.first()
-                if (!shouldLoadMoreLikeThis(settings)) {
-                    _uiState.update { it.copy(moreLikeThis = emptyList(), moreLikeThisSource = null) }
-                    return@launch
+            val source = when {
+                shouldLoadSimklMoreLikeThis() -> MoreLikeThisSource.SIMKL
+                shouldLoadTraktMoreLikeThis(meta) -> MoreLikeThisSource.TRAKT
+                else -> {
+                    val settings = tmdbSettingsDataStore.settings.first()
+                    if (!shouldLoadMoreLikeThis(settings)) {
+                        _uiState.update { it.copy(moreLikeThis = emptyList(), moreLikeThisSource = null) }
+                        return@launch
+                    }
+                    MoreLikeThisSource.TMDB
                 }
-                MoreLikeThisSource.TMDB
             }
 
             val rawRecommendations = when (source) {
@@ -1247,12 +1309,25 @@ class MetaDetailsViewModel @Inject constructor(
                     }
                 }
 
+                MoreLikeThisSource.SIMKL -> {
+                    runCatching {
+                        simklRelatedService.getRelated(
+                            meta = meta,
+                            fallbackItemId = itemId,
+                            fallbackItemType = itemType
+                        )
+                    }.getOrElse {
+                        Log.w(TAG, "Failed to load Simkl related titles for ${meta.id}: ${it.message}")
+                        emptyList()
+                    }
+                }
+
                 MoreLikeThisSource.TMDB -> {
                     val settings = tmdbSettingsDataStore.settings.first()
                     val tmdbContentType = resolveTmdbContentType(meta)
                     val tmdbLookupType = tmdbContentType.toApiString()
-                    val tmdbId = tmdbService.ensureTmdbId(meta.id, tmdbLookupType)
-                        ?: tmdbService.ensureTmdbId(itemId, itemType)
+                    val tmdbId = tmdbService.ensureTmdbId(meta.id, tmdbLookupType, fallbackImdbId = meta.imdbId)
+                        ?: tmdbService.ensureTmdbId(itemId, itemType, fallbackImdbId = meta.imdbId)
                     if (tmdbId.isNullOrBlank()) {
                         _uiState.update { it.copy(moreLikeThis = emptyList(), moreLikeThisSource = null) }
                         return@launch
@@ -1271,12 +1346,16 @@ class MetaDetailsViewModel @Inject constructor(
                 }
             }
 
+            val pattern = layoutPreferenceDataStore.customPosterUrlPattern.first()
+            val enabledScreens = layoutPreferenceDataStore.customPosterEnabledScreens.first()
             val recommendations = if (hideUnreleasedContent) {
                 val today = LocalDate.now()
                 rawRecommendations.filterNot { it.isUnreleased(today) }
             } else {
                 rawRecommendations
-            }
+            }.withCustomPosterUrls(
+                com.nuvio.tv.core.poster.patternForScreen(pattern, com.nuvio.tv.core.poster.CustomPosterScreen.DETAILS, enabledScreens)
+            )
 
             _uiState.update { state ->
                 if (state.meta == null || state.meta.id == meta.id) {
@@ -1297,12 +1376,17 @@ class MetaDetailsViewModel @Inject constructor(
 
     private fun shouldLoadTraktMoreLikeThis(meta: Meta): Boolean {
         if (!traktAuthenticated) return false
-        if (moreLikeThisSourcePreference == com.nuvio.tv.data.local.MoreLikeThisSourcePreference.TMDB) return false
+        if (moreLikeThisSourcePreference != com.nuvio.tv.data.local.MoreLikeThisSourcePreference.TRAKT) return false
         return when (meta.type) {
             ContentType.MOVIE -> true
             ContentType.SERIES, ContentType.TV -> true
             else -> meta.apiType in listOf("movie", "series", "tv", "show")
         }
+    }
+
+    private fun shouldLoadSimklMoreLikeThis(): Boolean {
+        if (moreLikeThisSourcePreference != com.nuvio.tv.data.local.MoreLikeThisSourcePreference.SIMKL) return false
+        return simklAuthRepository.state.value.isAuthenticated
     }
 
     private fun loadCollectionAsync(collectionId: Int, collectionName: String?, settings: TmdbSettings) {
@@ -1323,12 +1407,16 @@ class MetaDetailsViewModel @Inject constructor(
                 TmdbMovieCollection(name = null, items = emptyList())
             }
 
+            val collectionPattern = layoutPreferenceDataStore.customPosterUrlPattern.first()
+            val collectionEnabledScreens = layoutPreferenceDataStore.customPosterEnabledScreens.first()
             val filteredItems = if (hideUnreleasedContent) {
                 val today = LocalDate.now()
                 collection.items.filterNot { it.isUnreleased(today) }
             } else {
                 collection.items
-            }
+            }.withCustomPosterUrls(
+                com.nuvio.tv.core.poster.patternForScreen(collectionPattern, com.nuvio.tv.core.poster.CustomPosterScreen.DETAILS, collectionEnabledScreens)
+            )
 
             _uiState.update { state ->
                 state.copy(
@@ -1341,7 +1429,7 @@ class MetaDetailsViewModel @Inject constructor(
 
     private suspend fun loadMDBListRatings(meta: Meta) {
         val settings = mdbListSettingsDataStore.settings.first()
-        val isMdbListActive = settings.enabled && settings.apiKey.isNotBlank()
+        val isMdbListActive = mdbListRepository.isAvailable(settings)
         val ratingsResult = runCatching {
             mdbListRepository.getRatingsForMeta(
                 meta = meta,
@@ -1353,6 +1441,7 @@ class MetaDetailsViewModel @Inject constructor(
         _uiState.update { state ->
             state.copy(
                 mdbListRatings = ratingsResult?.ratings,
+                mdbListRatingOrder = settings.enabledRatingOrder(),
                 isMdbListRatingsActive = isMdbListActive
             )
         }
@@ -1405,10 +1494,10 @@ class MetaDetailsViewModel @Inject constructor(
                 }
 
                 val tmdbLookupType = tmdbContentType.toApiString()
-                val tmdbIdString = tmdbService.ensureTmdbId(meta.id, tmdbLookupType)
-                    ?: tmdbService.ensureTmdbId(itemId, itemType)
+                val tmdbIdString = tmdbService.ensureTmdbId(meta.id, tmdbLookupType, fallbackImdbId = meta.imdbId)
+                    ?: tmdbService.ensureTmdbId(itemId, itemType, fallbackImdbId = meta.imdbId)
                 val tmdbId = tmdbIdString?.toIntOrNull()
-                val imdbId = extractImdbId(meta.id) ?: extractImdbId(itemId)
+                val imdbId = extractImdbId(meta.id) ?: extractImdbId(itemId) ?: meta.imdbId
 
                 if (tmdbId == null && imdbId == null) {
                     _uiState.update { state ->
@@ -1474,12 +1563,12 @@ class MetaDetailsViewModel @Inject constructor(
 
         val tmdbContentType = resolveTmdbContentType(meta)
         val tmdbLookupType = tmdbContentType.toApiString()
-        val tmdbId = tmdbService.ensureTmdbId(meta.id, tmdbLookupType)
-            ?: tmdbService.ensureTmdbId(itemId, itemType)
+        val tmdbId = tmdbService.ensureTmdbId(meta.id, tmdbLookupType, fallbackImdbId = meta.imdbId)
+            ?: tmdbService.ensureTmdbId(itemId, itemType, fallbackImdbId = meta.imdbId)
             ?: return meta
 
         val isSeries = meta.apiType in listOf("series", "tv")
-        val needsEpisodes = (settings.useEpisodes || settings.useReleaseDates) && isSeries
+        val needsEpisodes = settings.useEpisodes && isSeries
 
         // Fetch main enrichment and episode enrichment in parallel.
         val (enrichment, episodeMap) = coroutineScope {
@@ -1537,12 +1626,6 @@ class MetaDetailsViewModel @Inject constructor(
             )
         }
 
-        if (enrichment != null && settings.useReleaseDates) {
-            updated = updated.copy(
-                releaseInfo = enrichment.releaseInfo ?: updated.releaseInfo
-            )
-        }
-
         if (enrichment != null && settings.useCredits) {
             val peopleCredits = buildList {
                 addAll(enrichment.directorMembers)
@@ -1596,7 +1679,7 @@ class MetaDetailsViewModel @Inject constructor(
                         released = selectEpisodeReleaseValue(
                             addonReleased = video.released,
                             tmdbAirDate = ep?.airDate,
-                            useTmdbReleaseDates = settings.useReleaseDates
+                            useTmdbReleaseDates = false
                         ),
                         thumbnail = if (settings.useEpisodes) ep?.thumbnail ?: video.thumbnail else video.thumbnail,
                         runtime = if (settings.useEpisodes) ep?.runtimeMinutes ?: video.runtime else video.runtime
@@ -1637,7 +1720,8 @@ class MetaDetailsViewModel @Inject constructor(
 
     private fun selectSeason(season: Int) {
         val meta = _uiState.value.meta ?: return
-        val episodes = getEpisodesForSeason(meta.videos, season)
+        suppressSeasonAutoSwitch = true
+        val episodes = getEpisodesForSeason(meta, season)
         _uiState.update {
             it.copy(
                 selectedSeason = season,
@@ -1646,7 +1730,17 @@ class MetaDetailsViewModel @Inject constructor(
         }
     }
 
-    private fun getEpisodesForSeason(videos: List<Video>, season: Int): List<Video> {
+    private fun getEpisodesForSeason(meta: Meta, season: Int): List<Video> {
+        val videos = meta.videos
+        if (meta.apiType.equals("tv", ignoreCase = true)) {
+            // Match Mobile's groupedEpisodesForDisplay: ignore unnumbered EPG
+            // rows and group videos without a season under specials (season 0).
+            return videos
+                .filter { it.season != null || it.episode != null }
+                .filter { (it.season ?: 0) == season }
+                .map { if (it.season == null) it.copy(season = 0) else it }
+                .sortedBy { it.episode }
+        }
         val filtered = videos.filter { it.season == season }
         if (filtered.isNotEmpty()) return filtered.sortedBy { it.episode }
         // Fallback: if no videos match the season (e.g. "other" type with
@@ -1950,24 +2044,30 @@ class MetaDetailsViewModel @Inject constructor(
             )
         }
 
-        if (latestProgress?.season != null && latestProgress.episode != null) {
-            val season = latestProgress.season
-            val episode = latestProgress.episode
+        val anchoredProgress = resolveNextToWatchLatestProgress(
+            latestProgress = latestProgress,
+            progressEntries = fallbackProgressMap.values,
+            isResumable = ::shouldResumeProgress
+        )
+
+        if (anchoredProgress?.season != null && anchoredProgress.episode != null) {
+            val season = anchoredProgress.season
+            val episode = anchoredProgress.episode
             val matchedIndex = episodes.indexOfFirst { it.season == season && it.episode == episode }
 
-            if (shouldResumeProgress(latestProgress)) {
+            if (shouldResumeProgress(anchoredProgress)) {
                 val matchedEpisode = if (matchedIndex >= 0) episodes[matchedIndex] else null
                 return NextToWatch(
-                    watchProgress = latestProgress,
+                    watchProgress = anchoredProgress,
                     isResume = true,
-                    nextVideoId = matchedEpisode?.id ?: latestProgress.videoId,
+                    nextVideoId = matchedEpisode?.id ?: anchoredProgress.videoId,
                     nextSeason = season,
                     nextEpisode = episode,
                     displayText = localizedContext.getString(R.string.detail_btn_resume_episode, season, episode)
                 )
             }
 
-            if (latestProgress.isCompleted() && matchedIndex >= 0) {
+            if (anchoredProgress.isCompleted() && matchedIndex >= 0) {
                 if (isRewatchMode) {
                     // In rewatch mode, simply take the next episode regardless of watched state
                     val next = episodes.getOrNull(matchedIndex + 1)
@@ -2754,7 +2854,7 @@ class MetaDetailsViewModel @Inject constructor(
             }
 
             val tmdbId = try {
-                tmdbService.ensureTmdbId(meta.id, meta.apiType)
+                tmdbService.ensureTmdbId(meta.id, meta.apiType, fallbackImdbId = meta.imdbId)
             } catch (_: Exception) {
                 null
             }
@@ -2814,7 +2914,7 @@ class MetaDetailsViewModel @Inject constructor(
         if (!AppFeaturePolicy.inAppTrailerPlaybackEnabled) return
 
         val state = _uiState.value
-        if (state.trailerUrl == null || state.isTrailerPlaying) return
+        if (state.trailerUrl == null || state.isTrailerPlaying || state.isBackgroundTrailerPlaying) return
         if (!trailerAutoplayEnabled) return
         if (trailerHasPlayed) return
         if (!isPlayButtonFocused) return
@@ -2822,9 +2922,10 @@ class MetaDetailsViewModel @Inject constructor(
         idleTimerJob = viewModelScope.launch {
             delay(trailerDelayMs)
             setTrailerPlaybackState(
-                isPlaying = true,
+                isPlaying = !trailerPlayInBackground,
                 showControls = false,
-                hideLogo = false
+                hideLogo = false,
+                isBackgroundPlaying = trailerPlayInBackground
             )
         }
     }
@@ -2861,7 +2962,7 @@ class MetaDetailsViewModel @Inject constructor(
         isPlayButtonFocused = false
         dismissSharedTrailerOverlay()
         val state = _uiState.value
-        if (state.isTrailerPlaying && !state.showTrailerControls) {
+        if ((state.isTrailerPlaying && !state.showTrailerControls) || state.isBackgroundTrailerPlaying) {
             trailerHasPlayed = true
             setTrailerPlaybackState(isPlaying = false, showControls = false, hideLogo = false)
         }
@@ -2916,7 +3017,7 @@ class MetaDetailsViewModel @Inject constructor(
 
         idleTimerJob?.cancel()
         isPlayButtonFocused = false
-        if (_uiState.value.isTrailerPlaying) {
+        if (_uiState.value.isTrailerPlaying || _uiState.value.isBackgroundTrailerPlaying) {
             setTrailerPlaybackState(
                 isPlaying = false,
                 showControls = false,
