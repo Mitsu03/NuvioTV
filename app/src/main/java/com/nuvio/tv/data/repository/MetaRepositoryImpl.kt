@@ -33,7 +33,8 @@ import javax.inject.Singleton
 class MetaRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val api: AddonApi,
-    private val addonRepository: AddonRepository
+    private val addonRepository: AddonRepository,
+    private val episodeReleaseDates: EpisodeReleaseDateSource = EpisodeReleaseDateSource.None
 ) : MetaRepository {
     companion object {
         private const val TAG = "MetaRepository"
@@ -59,6 +60,7 @@ class MetaRepositoryImpl @Inject constructor(
          * [getMeta] checks its cache first, so a hit never waits.
          */
         private const val INSTALLED_ADDONS_WAIT_MS = 750L
+        private const val RELEASE_DATES_TIMEOUT_MS = 3_000L
     }
 
     /**
@@ -190,7 +192,7 @@ class MetaRepositoryImpl @Inject constructor(
                     val response = api.getMeta(url)
                     if (response.isSuccessful) {
                         val metaDto = response.body()?.meta ?: return@async null
-                        val meta = metaDto.toDomain(context.getString(R.string.episodes_episode))
+                        val meta = withReleaseDates(metaDto.toDomain(context.getString(R.string.episodes_episode)))
                         val ttlMs = parseMaxAgeMs(response.headers()["Cache-Control"])
                         val cached = CachedMeta(meta, System.currentTimeMillis() + ttlMs)
                         metaCache[cacheKey] = cached
@@ -314,7 +316,7 @@ class MetaRepositoryImpl @Inject constructor(
                         val metaDto = response.body()?.meta
                         if (metaDto != null) {
                             val episodeLabel = context.getString(R.string.episodes_episode)
-                            val meta = metaDto.toDomain(episodeLabel)
+                            val meta = withReleaseDates(metaDto.toDomain(episodeLabel))
                             val ttlMs = parseMaxAgeMs(response.headers()["Cache-Control"])
                             val cached = CachedMeta(meta, System.currentTimeMillis() + ttlMs)
                             addonMetaCache[cacheKey] = cached
@@ -401,7 +403,7 @@ class MetaRepositoryImpl @Inject constructor(
                             if (response.isSuccessful) {
                                 val metaDto = response.body()?.meta
                                 if (metaDto != null) {
-                                    val meta = metaDto.toDomain(context.getString(R.string.episodes_episode))
+                                    val meta = withReleaseDates(metaDto.toDomain(context.getString(R.string.episodes_episode)))
                                     val ttlMs = parseMaxAgeMs(response.headers()["Cache-Control"])
                                     val cached = CachedMeta(meta, System.currentTimeMillis() + ttlMs)
                                     addonMetaCache[cacheKey] = cached
@@ -518,7 +520,7 @@ class MetaRepositoryImpl @Inject constructor(
                     val response = api.getMeta(url)
                     if (response.isSuccessful) {
                         val metaDto = response.body()?.meta ?: return@async null
-                        val meta = metaDto.toDomain(context.getString(R.string.episodes_episode))
+                        val meta = withReleaseDates(metaDto.toDomain(context.getString(R.string.episodes_episode)))
                         val ttlMs = parseMaxAgeMs(response.headers()["Cache-Control"])
                         val cached = CachedMeta(meta, System.currentTimeMillis() + ttlMs)
                         primaryAddonMetaCache[cacheKey] = cached
@@ -556,6 +558,10 @@ class MetaRepositoryImpl @Inject constructor(
      * query portions. Shared by URL construction and cache keying so the two
      * always normalize equivalent base URLs identically.
      */
+    /** A slow or failing lookup must never cost the meta itself. */
+    private suspend fun withReleaseDates(meta: Meta): Meta =
+        withTimeoutOrNull(RELEASE_DATES_TIMEOUT_MS) { episodeReleaseDates.withReleaseDates(meta) } ?: meta
+
     private fun splitAddonBaseUrl(baseUrl: String): Pair<String, String> {
         val cleanBaseUrl = baseUrl.trimEnd('/')
         val queryStart = cleanBaseUrl.indexOf('?')
