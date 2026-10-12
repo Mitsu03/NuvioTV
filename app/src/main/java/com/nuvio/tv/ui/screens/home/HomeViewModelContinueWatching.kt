@@ -1619,10 +1619,7 @@ private suspend fun HomeViewModel.enrichVisibleContinueWatchingItems(
                         }
                         is ContinueWatchingItem.NextUp -> {
                             val overlay = cwEnrichedNextUpOverlay[item.info.contentId]
-                            if (overlay != null &&
-                                overlay.season == item.info.season &&
-                                overlay.episode == item.info.episode
-                            ) {
+                            if (overlay != null && overlay.isCurrentOverlayFor(item.info)) {
                                 // Recalculate hasAired/isReleaseAlert from current time
                                 val freshHasAired = hasEpisodeAired(overlay.released, fallback = overlay.hasAired)
                                 if (freshHasAired != overlay.hasAired) {
@@ -2795,6 +2792,18 @@ private fun extractImdbIdFromContentId(contentId: String): String? {
     return regex.find(contentId)?.value
 }
 
+/**
+ * An enriched overlay may stand in for a freshly resolved next-up item only while both describe
+ * the same episode released at the same instant. Without the release check, a date corrected at
+ * the source stays hidden behind the overlay until the viewer moves on to another episode.
+ * A fresh item that carries no date cannot contradict the overlay.
+ */
+internal fun NextUpInfo.isCurrentOverlayFor(fresh: NextUpInfo): Boolean =
+    season == fresh.season &&
+        episode == fresh.episode &&
+        (fresh.released.isNullOrBlank() ||
+            parseEpisodeReleaseInstant(released) == parseEpisodeReleaseInstant(fresh.released))
+
 /** Applies enriched overlay from the previous enrichment cycle to avoid
  *  flickering between addon meta and TMDB-enriched values during fresh builds. */
 private suspend fun HomeViewModel.applyContinueWatchingEnrichmentOverlay(
@@ -2807,7 +2816,7 @@ private suspend fun HomeViewModel.applyContinueWatchingEnrichmentOverlay(
             when (item) {
                 is ContinueWatchingItem.NextUp -> {
                     val overlay = cwEnrichedNextUpOverlay[item.info.contentId] ?: return@map item
-                    if (overlay.season != item.info.season || overlay.episode != item.info.episode) {
+                    if (!overlay.isCurrentOverlayFor(item.info)) {
                         cwEnrichedNextUpOverlay.remove(item.info.contentId)
                         return@map item
                     }
