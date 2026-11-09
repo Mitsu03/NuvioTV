@@ -65,6 +65,8 @@ data class MetaDetailsUiState(
     val watchedEpisodes: Set<Pair<Int, Int>> = emptySet(),
     val episodeWatchedPendingKeys: Set<String> = emptySet(),
     val blurUnwatchedEpisodes: Boolean = false,
+    /** `(season, episode)` keys of pure filler episodes; display-only. */
+    val fillerEpisodes: Set<Pair<Int, Int>> = emptySet(),
     val randomEpisodeEnabled: Boolean = false,
     val episodeShuffle: com.nuvio.tv.domain.model.EpisodeShuffleSettings = com.nuvio.tv.domain.model.EpisodeShuffleSettings(),
     val shufflePoolEmpty: Boolean = false,

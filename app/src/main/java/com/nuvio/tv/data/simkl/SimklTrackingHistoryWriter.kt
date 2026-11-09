@@ -33,7 +33,7 @@ class SimklTrackingHistoryWriter @Inject constructor(
         return service.addToHistory(
             pushableItems.map { item ->
                 val enriched = snapshot.enrichMediaReference(item.media, entryIndex)
-                item.copy(media = enriched.resolveAnimeEpisodeForSimkl())
+                item.copy(media = snapshot.resolveAnimeEpisodeForSimkl(enriched))
             }
         )
     }
@@ -48,7 +48,7 @@ class SimklTrackingHistoryWriter @Inject constructor(
         val entryIndex = syncRepository.currentEntryIndex()
         return service.removeFromHistory(
             items.map { ref ->
-                snapshot.enrichMediaReference(ref, entryIndex).resolveAnimeEpisodeForSimkl()
+                snapshot.resolveAnimeEpisodeForSimkl(snapshot.enrichMediaReference(ref, entryIndex))
             }
         )
     }

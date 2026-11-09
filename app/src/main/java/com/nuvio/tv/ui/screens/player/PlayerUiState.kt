@@ -154,6 +154,8 @@ data class PlayerUiState(
     val currentEpisodeTitle: String? = null,
     val blurUnwatchedEpisodes: Boolean = false,
     val episodeOptionsOverlayStyle: EpisodeOptionsOverlayStyle = EpisodeOptionsOverlayStyle.BLUR,
+    /** `(season, episode)` keys of pure filler episodes; display-only. */
+    val fillerEpisodes: Set<Pair<Int, Int>> = emptySet(),
     val episodeWatchProgressMap: Map<Pair<Int, Int>, WatchProgress> = emptyMap(),
     val watchedEpisodeKeys: Set<Pair<Int, Int>> = emptySet(),
     val showEpisodeStreams: Boolean = false,

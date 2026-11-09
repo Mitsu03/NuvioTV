@@ -58,4 +58,18 @@ class PlayerScrobblePolicyTest {
         assertFalse(shouldSendStopScrobble(hasActiveScrobble = false, progressPercent = 79.99f))
         assertTrue(shouldSendStopScrobble(hasActiveScrobble = false, progressPercent = 80f))
     }
+
+    @Test
+    fun `pause escalates to the completion stop past the watched threshold`() {
+        assertTrue(shouldEscalatePauseToCompletionStop(80f))
+        assertTrue(shouldEscalatePauseToCompletionStop(99.15f))
+        assertTrue(shouldEscalatePauseToCompletionStop(100f))
+    }
+
+    @Test
+    fun `pause stays a pause below the watched threshold`() {
+        assertFalse(shouldEscalatePauseToCompletionStop(0f))
+        assertFalse(shouldEscalatePauseToCompletionStop(45f))
+        assertFalse(shouldEscalatePauseToCompletionStop(79.99f))
+    }
 }

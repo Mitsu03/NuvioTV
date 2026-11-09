@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.core.player.PlayerSessionTracker
+import com.nuvio.tv.core.tracking.shouldSurfaceNextUpForSeries
 import com.nuvio.tv.core.util.isEpisodeReleaseAired
 import com.nuvio.tv.core.util.parseEpisodeReleaseInstant
 import com.nuvio.tv.core.util.selectEpisodeReleaseValue
@@ -529,6 +530,21 @@ internal fun HomeViewModel.loadContinueWatchingPipeline() {
                         val seedAdvanced = curSeason > cached.seedSeason ||
                             (curSeason == cached.seedSeason && curEpisode > cached.seedEpisode)
                         if (seedAdvanced) return@mapNotNull null
+                    }
+                    // Drop cards the tracker no longer lists as watching, so a series finished
+                    // before this build shipped disappears on the first render rather than
+                    // lingering until the pipeline rewrites the snapshot. Only once the remote
+                    // list has loaded: an empty projection would answer "not watching" for
+                    // everything.
+                    if (
+                        snapshot.hasLoadedRemoteProgress &&
+                        !shouldSurfaceNextUpCard(
+                            contentId = cached.contentId,
+                            seedLastWatchedEpochMs = cached.lastWatched,
+                            releaseTimestamp = cached.releaseTimestamp
+                        )
+                    ) {
+                        return@mapNotNull null
                     }
                     ContinueWatchingItem.NextUp(
                         info = NextUpInfo(
@@ -1233,6 +1249,27 @@ internal fun HomeViewModel.shouldUseAsCompletedSeed(progress: WatchProgress): Bo
     return watchProgressRepository.shouldUseAsNextUpSeed(progress, System.currentTimeMillis())
 }
 
+/**
+ * Whether a Next Up card may be shown for [contentId].
+ *
+ * Next Up is seeded from watch history alone, so a series the tracker no longer lists as watching
+ * keeps offering whatever the addon lists after the furthest episode watched. Asking the active
+ * provider for the list status is what keeps Continue Watching to what the viewer is actually
+ * watching; [shouldSurfaceNextUpForSeries] carves out a next episode that has only just aired.
+ *
+ * Providers without a watchlist answer true and behave as before.
+ */
+private fun HomeViewModel.shouldSurfaceNextUpCard(
+    contentId: String,
+    seedLastWatchedEpochMs: Long,
+    releaseTimestamp: Long?
+): Boolean = shouldSurfaceNextUpForSeries(
+    isTrackedAsWatching = watchProgressRepository.isTrackedAsWatching(contentId),
+    seedLastWatchedEpochMs = seedLastWatchedEpochMs,
+    releasedEpochMs = releaseTimestamp,
+    nowEpochMs = System.currentTimeMillis()
+)
+
 private fun HomeViewModel.shouldTreatAsActiveInProgressForNextUpSuppression(
     progress: WatchProgress,
     latestCompletedAt: Long?
@@ -1443,7 +1480,14 @@ private suspend fun HomeViewModel.buildLightweightNextUpItems(
             .filter { progress ->
                 nextUpDismissKey(progress.contentId, progress.season, progress.episode) !in dismissedNextUp
             }
-            .sortedByDescending { it.lastWatched }
+            // Seeds the tracker still lists as watching go first. Only they are certain to
+            // survive the card gate, so letting a completed series take one of the
+            // CW_MAX_NEXT_UP_LOOKUPS slots would spend a lookup on a card that is then dropped.
+            .sortedWith(
+                compareByDescending<WatchProgress> {
+                    watchProgressRepository.isTrackedAsWatching(it.contentId)
+                }.thenByDescending { it.lastWatched }
+            )
             // Skip seeds validated as "no next-up" ONLY if the seed hasn't changed.
             // The cache key includes season+episode, so a changed seed (user watched
             // a new episode) produces a cache miss and is always processed.
@@ -1590,10 +1634,7 @@ private suspend fun HomeViewModel.enrichVisibleContinueWatchingItems(
                         }
                         is ContinueWatchingItem.NextUp -> {
                             val overlay = cwEnrichedNextUpOverlay[item.info.contentId]
-                            if (overlay != null &&
-                                overlay.season == item.info.season &&
-                                overlay.episode == item.info.episode
-                            ) {
+                            if (overlay != null && overlay.isCurrentOverlayFor(item.info)) {
                                 // Recalculate hasAired/isReleaseAlert from current time
                                 val freshHasAired = hasEpisodeAired(overlay.released, fallback = overlay.hasAired)
                                 if (freshHasAired != overlay.hasAired) {
@@ -1878,6 +1919,19 @@ private suspend fun HomeViewModel.buildNextUpItem(
         nextReleased = nextUp.released,
         hasAired = nextUp.hasAired
     )
+    if (
+        !shouldSurfaceNextUpCard(
+            contentId = progress.contentId,
+            seedLastWatchedEpochMs = progress.lastWatched,
+            releaseTimestamp = releaseState.releaseTimestamp
+        )
+    ) {
+        logNextUpDecision(
+            "drop contentId=${progress.contentId} name=${progress.name} reason=not-tracked-as-watching " +
+                "next=${nextUp.season}x${nextUp.episode} released=${nextUp.released}"
+        )
+        return null
+    }
     val nextUpVideo = seedMeta?.videos?.firstOrNull {
         it.season == nextUp.season && it.episode == nextUp.episode
     }
@@ -2370,6 +2424,7 @@ internal fun resolveNextUpVideoFromMeta(
 }
 
 private const val CW_META_NEGATIVE_CACHE_TTL_MS = 5 * 60_000L
+private const val CW_META_ALTERNATE_ID_LIMIT = 4
 
 internal suspend fun HomeViewModel.resolveCwMeta(progress: WatchProgress) =
     resolveMetaForProgress(progress, cwMetaCache)
@@ -2403,6 +2458,14 @@ private suspend fun HomeViewModel.resolveMetaForProgress(
     val idCandidates = buildList {
         add(progress.contentId)
         if (progress.contentId.startsWith("tmdb:")) add(progress.contentId.substringAfter(':'))
+        // A tracker gives each season or cour of a franchise its own ids, and the one currently
+        // airing often carries an id no installed meta addon answers for. Its sibling entries
+        // describe the same show under an id they do serve.
+        addAll(
+            watchProgressRepository
+                .activeProviderAlternateContentIds(progress.contentId)
+                .take(CW_META_ALTERNATE_ID_LIMIT)
+        )
     }.distinct()
 
     val typeCandidates = listOf(progress.contentType, "series", "tv").distinct()
@@ -2748,6 +2811,18 @@ private fun extractImdbIdFromContentId(contentId: String): String? {
     return regex.find(contentId)?.value
 }
 
+/**
+ * An enriched overlay may stand in for a freshly resolved next-up item only while both describe
+ * the same episode released at the same instant. Without the release check, a date corrected at
+ * the source stays hidden behind the overlay until the viewer moves on to another episode.
+ * A fresh item that carries no date cannot contradict the overlay.
+ */
+internal fun NextUpInfo.isCurrentOverlayFor(fresh: NextUpInfo): Boolean =
+    season == fresh.season &&
+        episode == fresh.episode &&
+        (fresh.released.isNullOrBlank() ||
+            parseEpisodeReleaseInstant(released) == parseEpisodeReleaseInstant(fresh.released))
+
 /** Applies enriched overlay from the previous enrichment cycle to avoid
  *  flickering between addon meta and TMDB-enriched values during fresh builds. */
 private suspend fun HomeViewModel.applyContinueWatchingEnrichmentOverlay(
@@ -2760,7 +2835,7 @@ private suspend fun HomeViewModel.applyContinueWatchingEnrichmentOverlay(
             when (item) {
                 is ContinueWatchingItem.NextUp -> {
                     val overlay = cwEnrichedNextUpOverlay[item.info.contentId] ?: return@map item
-                    if (overlay.season != item.info.season || overlay.episode != item.info.episode) {
+                    if (!overlay.isCurrentOverlayFor(item.info)) {
                         cwEnrichedNextUpOverlay.remove(item.info.contentId)
                         return@map item
                     }

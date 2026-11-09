@@ -2,12 +2,14 @@ package com.nuvio.tv.core.di
 
 import com.nuvio.tv.data.repository.AddonRepositoryImpl
 import com.nuvio.tv.data.repository.CatalogRepositoryImpl
+import com.nuvio.tv.data.repository.EpisodeReleaseDateSource
 import com.nuvio.tv.data.repository.LibraryRepositoryImpl
 import com.nuvio.tv.data.repository.MetaRepositoryImpl
 import com.nuvio.tv.data.repository.StreamRepositoryImpl
 import com.nuvio.tv.data.repository.SubtitleRepositoryImpl
 import com.nuvio.tv.data.repository.SyncRepositoryImpl
 import com.nuvio.tv.data.repository.WatchProgressRepositoryImpl
+import com.nuvio.tv.data.simkl.SimklEpisodeReleaseDates
 import com.nuvio.tv.domain.repository.AddonRepository
 import com.nuvio.tv.domain.repository.CatalogRepository
 import com.nuvio.tv.domain.repository.LibraryRepository
@@ -41,6 +43,10 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindMetaRepository(impl: MetaRepositoryImpl): MetaRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindEpisodeReleaseDateSource(impl: SimklEpisodeReleaseDates): EpisodeReleaseDateSource
 
     @Binds
     @Singleton
