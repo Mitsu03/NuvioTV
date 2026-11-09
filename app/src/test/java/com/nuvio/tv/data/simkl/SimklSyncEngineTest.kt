@@ -47,6 +47,7 @@ class SimklSyncEngineTest {
         assertEquals(listOf("1", "2", "3"), result.entries.mapNotNull { it.media?.ids?.idValue("simkl") })
         assertEquals(1, result.playback.size)
         assertEquals(500L, result.lastSyncedAtEpochMs)
+        assertEquals(500L, result.lastFullReconciledAtEpochMs)
         assertTrue(remote.isExhausted)
         assertEquals(
             listOf(
@@ -56,6 +57,90 @@ class SimklSyncEngineTest {
             ),
             remote.allItemsRequests
         )
+    }
+
+    @Test
+    fun `manual reconciliation replaces stale watching membership with current Simkl status`() = runBlocking {
+        val current = SimklSyncSnapshot(
+            isInitialized = true,
+            watermark = "v1",
+            activities = activities(all = "v1"),
+            entries = listOf(entry(SimklMediaType.SHOWS, "1")),
+            lastFullReconciledAtEpochMs = 100L
+        )
+        val remote = ScriptedRemote(
+            Step.AllItems(
+                SimklMediaType.SHOWS,
+                responseOf(entry(SimklMediaType.SHOWS, "1", SimklListStatus.DROPPED))
+            ),
+            Step.AllItems(SimklMediaType.MOVIES, SimklAllItemsResponse(movies = emptyList())),
+            Step.AllItems(SimklMediaType.ANIME, SimklAllItemsResponse(anime = emptyList())),
+            Step.Playback(emptyList()),
+            Step.Activities(activities(all = "v1"))
+        )
+
+        val result = SimklSyncEngine(remote) { 900L }.synchronize(
+            current,
+            forceFullReconciliation = true
+        )
+
+        assertTrue(result.toSimklLibraryProjection().itemsByStatus.getValue("simkl:status:watching").isEmpty())
+        assertEquals(
+            SimklListStatus.DROPPED,
+            result.entries.single().status
+        )
+        assertEquals(900L, result.lastFullReconciledAtEpochMs)
+        assertTrue(remote.isExhausted)
+    }
+
+    @Test
+    fun `old snapshot is reconciled automatically even when activity watermark is unchanged`() = runBlocking {
+        val current = SimklSyncSnapshot(
+            schemaVersion = 1,
+            isInitialized = true,
+            watermark = "v1",
+            activities = activities(all = "v1"),
+            entries = listOf(entry(SimklMediaType.SHOWS, "1"))
+        )
+        val remote = ScriptedRemote(
+            Step.AllItems(SimklMediaType.SHOWS, SimklAllItemsResponse(shows = emptyList())),
+            Step.AllItems(SimklMediaType.MOVIES, SimklAllItemsResponse(movies = emptyList())),
+            Step.AllItems(SimklMediaType.ANIME, SimklAllItemsResponse(anime = emptyList())),
+            Step.Playback(emptyList()),
+            Step.Activities(activities(all = "v1"))
+        )
+
+        val result = SimklSyncEngine(remote) { 900L }.synchronize(current)
+
+        assertEquals(2, result.schemaVersion)
+        assertTrue(result.entries.isEmpty())
+        assertTrue(result.toSimklLibraryProjection().itemsByStatus.getValue("simkl:status:watching").isEmpty())
+        assertTrue(remote.isExhausted)
+    }
+
+    @Test
+    fun `daily reconciliation removes stale watching entries without a new activity`() = runBlocking {
+        val day = 24L * 60L * 60L * 1_000L
+        val current = SimklSyncSnapshot(
+            isInitialized = true,
+            watermark = "v1",
+            activities = activities(all = "v1"),
+            entries = listOf(entry(SimklMediaType.SHOWS, "1")),
+            lastFullReconciledAtEpochMs = 100L
+        )
+        val remote = ScriptedRemote(
+            Step.AllItems(SimklMediaType.SHOWS, SimklAllItemsResponse(shows = emptyList())),
+            Step.AllItems(SimklMediaType.MOVIES, SimklAllItemsResponse(movies = emptyList())),
+            Step.AllItems(SimklMediaType.ANIME, SimklAllItemsResponse(anime = emptyList())),
+            Step.Playback(emptyList()),
+            Step.Activities(activities(all = "v1"))
+        )
+
+        val result = SimklSyncEngine(remote) { 100L + day }.synchronize(current)
+
+        assertTrue(result.entries.isEmpty())
+        assertEquals(100L + day, result.lastFullReconciledAtEpochMs)
+        assertTrue(remote.isExhausted)
     }
 
     @Test

@@ -111,6 +111,9 @@ fun truthy(value: String?): Boolean {
 
 val buildingAppBundle = gradle.startParameter.taskNames.any { it.contains("bundle", ignoreCase = true) }
 val useDebugReleaseSigning = env("CI_USE_DEBUG_SIGNING").equals("true", ignoreCase = true)
+val debugApplicationIdOverride = providers.gradleProperty("debugApplicationIdOverride").orNull
+    ?.trim()?.takeIf(String::isNotEmpty)
+val useAndroidDebugSigning = parseBooleanProperty(providers.gradleProperty("useAndroidDebugSigning").orNull)
 val useLocalFfmpegDecoder = truthy(
     providers.gradleProperty("useLocalFfmpegDecoder").orNull
         ?: env("USE_LOCAL_FFMPEG_DECODER")
@@ -223,7 +226,7 @@ android {
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = signingConfigs.getByName(if (useAndroidDebugSigning) "debug" else "release")
             isDebuggable = parseBooleanProperty(providers.gradleProperty("debuggable").orNull)
             isMinifyEnabled = false
 
@@ -365,7 +368,12 @@ android {
 androidComponents {
     onVariants(selector().withBuildType("debug")) { variant ->
         val isPlaystore = variant.productFlavors.any { it.second == "playstore" }
-        variant.applicationId.set(if (isPlaystore) "com.nuvio.appdebug" else "com.nuviodebug.com")
+        variant.applicationId.set(
+            debugApplicationIdOverride ?: if (isPlaystore) "com.nuvio.appdebug" else "com.nuviodebug.com"
+        )
+    }
+    onVariants(selector().withBuildType("benchmark")) { variant ->
+        debugApplicationIdOverride?.let { variant.applicationId.set(it) }
     }
     // Only the full flavor ships the in-app updater.
     onVariants(selector().withFlavor("distribution" to "full")) { variant ->

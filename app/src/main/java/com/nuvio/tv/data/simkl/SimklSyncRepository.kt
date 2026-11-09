@@ -77,6 +77,7 @@ class SimklSyncRepository @Inject constructor(
         val generation = profileGeneration
         refreshGate.runIfNeeded(
             profileGeneration = generation,
+            skipIfCompletedWhileWaiting = intent != TrackingRefreshIntent.USER_INITIATED,
             shouldRun = {
                 val current = _state.value
                 profileId == profileManager.activeProfileId.value &&
@@ -90,7 +91,7 @@ class SimklSyncRepository @Inject constructor(
                     )
             }
         ) {
-            refreshSnapshot(profileId, generation)
+            refreshSnapshot(profileId, generation, intent)
         }
     }
 
@@ -228,11 +229,18 @@ class SimklSyncRepository @Inject constructor(
         }
     }
 
-    private suspend fun refreshSnapshot(profileId: Int, generation: Long) = snapshotMutex.withLock {
+    private suspend fun refreshSnapshot(
+        profileId: Int,
+        generation: Long,
+        intent: TrackingRefreshIntent
+    ) = snapshotMutex.withLock {
         val previous = _state.value
         _state.value = previous.copy(isLoading = true, errorMessage = null)
         val result = try {
-            engine.synchronize(previous.snapshot)
+            engine.synchronize(
+                previous.snapshot,
+                forceFullReconciliation = intent == TrackingRefreshIntent.USER_INITIATED
+            )
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {

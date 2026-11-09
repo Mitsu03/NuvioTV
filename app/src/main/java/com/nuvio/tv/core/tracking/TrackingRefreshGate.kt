@@ -11,11 +11,16 @@ class TrackingRefreshGate {
     suspend fun runIfNeeded(
         profileGeneration: Long,
         shouldRun: () -> Boolean,
+        skipIfCompletedWhileWaiting: Boolean = true,
         block: suspend () -> Unit
     ) {
         val observedSequence = completionSequence
         mutex.withLock {
-            if (completionSequence != observedSequence && lastCompletedProfileGeneration == profileGeneration) return
+            if (
+                skipIfCompletedWhileWaiting &&
+                completionSequence != observedSequence &&
+                lastCompletedProfileGeneration == profileGeneration
+            ) return
             if (!shouldRun()) return
             try {
                 block()

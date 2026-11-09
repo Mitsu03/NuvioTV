@@ -9,8 +9,18 @@ class SimklSyncEngine internal constructor(
     @Inject
     constructor(remote: SimklSyncRemote) : this(remote, System::currentTimeMillis)
 
-    suspend fun synchronize(current: SimklSyncSnapshot): SimklSyncSnapshot {
-        if (!current.isInitialized) return initialSync()
+    suspend fun synchronize(
+        current: SimklSyncSnapshot,
+        forceFullReconciliation: Boolean = false
+    ): SimklSyncSnapshot {
+        if (
+            !current.isInitialized ||
+            forceFullReconciliation ||
+            current.schemaVersion < 2 ||
+            current.lastFullReconciledAtEpochMs?.let { lastFull ->
+                nowEpochMs() - lastFull >= FULL_RECONCILIATION_INTERVAL_MS
+            } == true
+        ) return initialSync()
 
         val activities = remote.fetchActivities()
         if (activities.all == current.watermark) {
@@ -64,8 +74,13 @@ class SimklSyncEngine internal constructor(
             entries = entries.distinctBy(SimklLibraryEntry::stableKey),
             playback = playback,
             lastSyncedAtEpochMs = now,
-            lastCheckedAtEpochMs = now
+            lastCheckedAtEpochMs = now,
+            lastFullReconciledAtEpochMs = now
         ).reconcileWatchedPlayback()
+    }
+
+    private companion object {
+        const val FULL_RECONCILIATION_INTERVAL_MS = 24L * 60L * 60L * 1_000L
     }
 }
 
